@@ -1,0 +1,258 @@
+{
+  "data": {
+    "success": true,
+    "source": "history",
+    "entities": [
+      {
+        "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "basement_movie_inovelli_presence Occupancy"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:11.637039-04:00",
+            "last_updated": "2026-10-17T22:03:11.637039-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "basement_movie_inovelli_presence Occupancy"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T22:03:53.716807-04:00",
+            "last_updated": "2026-10-17T22:03:53.716807-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "basement_movie_inovelli_presence Occupancy"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:21:15.804918-04:00",
+            "last_updated": "2026-10-17T22:21:15.804918-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "basement_movie_inovelli_presence Occupancy"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T22:24:41.329915-04:00",
+            "last_updated": "2026-10-17T22:24:41.329915-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "basement_movie_inovelli_presence Occupancy"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:25:10.131603-04:00",
+            "last_updated": "2026-10-17T22:25:10.131603-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "basement_movie_inovelli_presence Occupancy"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T22:28:56.590808-04:00",
+            "last_updated": "2026-10-17T22:28:56.590808-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "basement_movie_inovelli_presence Occupancy"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:04:36.808218-04:00",
+            "last_updated": "2026-10-17T23:04:36.808218-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "basement_movie_inovelli_presence Occupancy"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:06:37.568453-04:00",
+            "last_updated": "2026-10-17T23:06:37.568453-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "basement_movie_inovelli_presence Occupancy"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:18:58.287358-04:00",
+            "last_updated": "2026-10-17T23:18:58.287358-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "basement_movie_inovelli_presence Occupancy"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:20:13.139199-04:00",
+            "last_updated": "2026-10-17T23:20:13.139199-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "basement_movie_inovelli_presence Occupancy"
+            }
+          }
+        ],
+        "total_count": 11,
+        "offset": 0,
+        "limit": 1000,
+        "count": 11,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:18.693298-04:00",
+            "last_updated": "2026-10-17T22:03:18.693298-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:13:49.149431-04:00",
+            "last_updated": "2026-10-17T23:13:49.149431-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:18:57.664803-04:00",
+            "last_updated": "2026-10-17T23:18:57.664803-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:19:04.246415-04:00",
+            "last_updated": "2026-10-17T23:19:04.246415-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:10.092255-04:00",
+            "last_updated": "2026-10-17T23:19:10.092255-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:19:40.009054-04:00",
+            "last_updated": "2026-10-17T23:19:40.009054-04:00",
+            "attributes": {
+              "device_class": "occupancy",
+              "friendly_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+            }
+          }
+        ],
+        "total_count": 7,
+        "offset": 0,
+        "limit": 1000,
+        "count": 7,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "Basement Movie Room TV Auto-Off Pending (toggle off to cancel)"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:13:49.150681-04:00",
+            "last_updated": "2026-10-17T23:13:49.150681-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "Basement Movie Room TV Auto-Off Pending (toggle off to cancel)"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:18:57.681157-04:00",
+            "last_updated": "2026-10-17T23:18:57.681157-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "Basement Movie Room TV Auto-Off Pending (toggle off to cancel)"
+            }
+          }
+        ],
+        "total_count": 3,
+        "offset": 0,
+        "limit": 1000,
+        "count": 3,
+        "has_more": false,
+        "next_offset": null
+      }
+    ],
+    "period": {
+      "start": "2026-10-18T02:00:00+00:00",
+      "end": "2026-10-18T03:30:00+00:00"
+    },
+    "query_params": {
+      "minimal_response": false,
+      "significant_changes_only": false,
+      "limit": 1000,
+      "offset": 0,
+      "order": "asc"
+    }
+  },
+  "metadata": {
+    "home_assistant_timezone": "America/New_York",
+    "timestamp_format": "ISO 8601 (America/New_York)",
+    "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/New_York local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+  }
+}

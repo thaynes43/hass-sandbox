@@ -1,0 +1,62 @@
+{
+  "success": true,
+  "automation_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+  "trace_count": 5,
+  "total_available": 5,
+  "offset": 0,
+  "order": "newest",
+  "has_more": false,
+  "traces": [
+    {
+      "run_id": "79c6dcdca189e60c46692c3ca7a603b2",
+      "timestamp": {
+        "start": "2026-10-18T03:20:13.140524+00:00",
+        "finish": "2026-10-18T03:20:13.141073+00:00"
+      },
+      "state": "stopped",
+      "trigger": "binary_sensor.basement_movie_inovelli_presence_occupancy via template",
+      "execution": "finished"
+    },
+    {
+      "run_id": "3cd21a8387f2c2ec5322e04dd2e6620c",
+      "timestamp": {
+        "start": "2026-10-18T03:19:39.792118+00:00",
+        "finish": "2026-10-18T03:19:39.793098+00:00"
+      },
+      "state": "stopped",
+      "trigger": "state of media_player.lg_webos_tv_oled83g4wua",
+      "execution": "finished"
+    },
+    {
+      "run_id": "49554d637499f3d7a9af254ade7676f5",
+      "timestamp": {
+        "start": "2026-10-18T03:18:57.665175+00:00",
+        "finish": "2026-10-18T03:18:57.685493+00:00"
+      },
+      "state": "stopped",
+      "trigger": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+      "execution": "finished"
+    },
+    {
+      "run_id": "d9ee2d708d3a30df305f93f7ef9b2d69",
+      "timestamp": {
+        "start": "2026-10-18T03:13:49.150219+00:00",
+        "finish": "2026-10-18T03:18:57.675699+00:00"
+      },
+      "state": "stopped",
+      "trigger": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+      "execution": "cancelled"
+    },
+    {
+      "run_id": "5d9c45efe49328080f999d4bbad719cc",
+      "timestamp": {
+        "start": "2026-10-18T02:03:25.371661+00:00",
+        "finish": "2026-10-18T02:03:25.373381+00:00"
+      },
+      "state": "stopped",
+      "trigger": "state of media_player.lg_webos_tv_oled83g4wua",
+      "execution": "finished"
+    }
+  ],
+  "hint": "Use run_id with this tool to get detailed trace information"
+}

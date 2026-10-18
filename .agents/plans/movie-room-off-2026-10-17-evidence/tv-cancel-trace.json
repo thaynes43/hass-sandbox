@@ -1,0 +1,74 @@
+{
+  "success": true,
+  "automation_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+  "run_id": "49554d637499f3d7a9af254ade7676f5",
+  "timestamp": {
+    "start": "2026-10-18T03:18:57.665175+00:00",
+    "finish": "2026-10-18T03:18:57.685493+00:00"
+  },
+  "state": "stopped",
+  "trigger": {
+    "platform": "template",
+    "description": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+    "to_state": "on",
+    "from_state": "off",
+    "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor"
+  },
+  "action_trace": [
+    {
+      "path": "action/0",
+      "timestamp": "2026-10-18T03:18:57.680683+00:00",
+      "result": {
+        "choice": 0
+      },
+      "variables": {
+        "context": {
+          "id": "01M56GA1W10HJ862DM3SM877PA",
+          "parent_id": "01M56GA1W068DE04P7K67RFNR8",
+          "user_id": null
+        }
+      }
+    },
+    {
+      "path": "action/0/choose/0",
+      "timestamp": "2026-10-18T03:18:57.680719+00:00",
+      "result": {
+        "result": true
+      }
+    },
+    {
+      "path": "action/0/choose/0/conditions/0",
+      "timestamp": "2026-10-18T03:18:57.680732+00:00",
+      "result": {
+        "result": true
+      }
+    },
+    {
+      "path": "action/0/choose/0/sequence/0",
+      "timestamp": "2026-10-18T03:18:57.680795+00:00",
+      "result": {
+        "params": {
+          "domain": "input_boolean",
+          "service": "turn_off",
+          "service_data": {},
+          "target": {
+            "entity_id": [
+              "input_boolean.basement_movie_room_tv_auto_off_enabled"
+            ]
+          }
+        },
+        "running_script": false
+      }
+    }
+  ],
+  "config_summary": {
+    "alias": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]",
+    "mode": "restart"
+  },
+  "script_execution": "finished",
+  "context": {
+    "id": "01M56GA1W10HJ862DM3SM877PA",
+    "parent_id": "01M56GA1W068DE04P7K67RFNR8",
+    "user_id": null
+  }
+}

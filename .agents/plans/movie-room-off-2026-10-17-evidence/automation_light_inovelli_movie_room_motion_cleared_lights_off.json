@@ -1,0 +1,46 @@
+{
+  "success": true,
+  "action": "get",
+  "automation_id": "automation.light_inovelli_movie_room_motion_cleared_lights_off",
+  "config": {
+    "id": "1769402249599",
+    "alias": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]",
+    "description": "Movie room is OFF-only: we don't auto-turn on lights here; we only ensure lights turn off after the room is empty.\n",
+    "triggers": [
+      {
+        "trigger": "template",
+        "value_template": "{{\n  is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off')\n  and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off')\n}}\n"
+      }
+    ],
+    "conditions": [],
+    "actions": [
+      {
+        "condition": "template",
+        "value_template": "{# Only run when hold is clear #}\n{% set s = 'basement_movie_inovelli_presence' %}\n{% set manual = states('input_text.inovelli_manual_hold') | int(85) %}\n{% set auto = states('input_text.inovelli_auto_hold') | int(0) %}\n{% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}\n{{ led1 != manual and led1 != auto }}\n"
+      },
+      {
+        "delay": "{% set raw = states('input_select.basement_movie_room_occupancy_off_delay') %} {% set d = raw | replace('\"','') | replace(\"'\",\"\") | trim %} {{ d if d not in ['unknown','unavailable',''] else '00:05:00' }}"
+      },
+      {
+        "condition": "template",
+        "value_template": "{{\n  is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off')\n  and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off')\n}}\n"
+      },
+      {
+        "condition": "template",
+        "value_template": "{# Re-check hold state after the delay #}\n{% set s = 'basement_movie_inovelli_presence' %}\n{% set manual = states('input_text.inovelli_manual_hold') | int(85) %}\n{% set auto = states('input_text.inovelli_auto_hold') | int(0) %}\n{% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}\n{{ led1 != manual and led1 != auto }}\n"
+      },
+      {
+        "action": "light.turn_off",
+        "target": {
+          "entity_id": [
+            "light.basement_movie_room_lights",
+            "light.basement_movie_room_ambient_lighting"
+          ]
+        }
+      }
+    ],
+    "mode": "restart",
+    "category": "01K57ATNFFTNT6X9H75K57VWZ9"
+  },
+  "config_hash": "2ed7e24f71801b90"
+}

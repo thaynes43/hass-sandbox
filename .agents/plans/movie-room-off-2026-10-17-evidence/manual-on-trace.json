@@ -1,0 +1,285 @@
+{
+  "success": true,
+  "automation_id": "automation.basement_movie_room_inovelli_blue_switch_behavior",
+  "run_id": "8cbc90874965b89605bae242f89a735d",
+  "timestamp": {
+    "start": "2026-10-18T03:19:01.611558+00:00",
+    "finish": "2026-10-18T03:19:01.625624+00:00"
+  },
+  "state": "stopped",
+  "trigger": {
+    "platform": "mqtt",
+    "description": "mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action"
+  },
+  "action_trace": [
+    {
+      "path": "action/0",
+      "timestamp": "2026-10-18T03:19:01.617644+00:00",
+      "variables": {
+        "context": {
+          "id": "01M56GA5QBDGWB5JS5H79E7ZFQ",
+          "parent_id": null,
+          "user_id": null
+        },
+        "command": "up_held"
+      }
+    },
+    {
+      "path": "action/1",
+      "timestamp": "2026-10-18T03:19:01.617760+00:00",
+      "result": {
+        "choice": 15
+      }
+    },
+    {
+      "path": "action/1/choose/0",
+      "timestamp": "2026-10-18T03:19:01.617788+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/0/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.617799+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/1",
+      "timestamp": "2026-10-18T03:19:01.617848+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/1/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.617856+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/2",
+      "timestamp": "2026-10-18T03:19:01.617888+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/2/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.617895+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/3",
+      "timestamp": "2026-10-18T03:19:01.617924+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/3/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.617931+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/4",
+      "timestamp": "2026-10-18T03:19:01.617957+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/4/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.617964+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/5",
+      "timestamp": "2026-10-18T03:19:01.617993+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/5/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.617999+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/6",
+      "timestamp": "2026-10-18T03:19:01.618025+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/6/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.618031+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/7",
+      "timestamp": "2026-10-18T03:19:01.618057+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/7/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.618064+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/8",
+      "timestamp": "2026-10-18T03:19:01.618089+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/8/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.618095+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/9",
+      "timestamp": "2026-10-18T03:19:01.618137+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/9/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.618144+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/10",
+      "timestamp": "2026-10-18T03:19:01.618173+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/10/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.618180+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/11",
+      "timestamp": "2026-10-18T03:19:01.618205+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/11/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.618211+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/12",
+      "timestamp": "2026-10-18T03:19:01.618236+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/12/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.618243+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/13",
+      "timestamp": "2026-10-18T03:19:01.618272+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/13/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.618278+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/14",
+      "timestamp": "2026-10-18T03:19:01.618303+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/1/choose/14/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.618314+00:00",
+      "result": {
+        "result": false,
+        "entities": []
+      }
+    },
+    {
+      "path": "action/1/choose/15",
+      "timestamp": "2026-10-18T03:19:01.618338+00:00",
+      "result": {
+        "result": true
+      }
+    },
+    {
+      "path": "action/1/choose/15/conditions/0",
+      "timestamp": "2026-10-18T03:19:01.618345+00:00",
+      "result": {
+        "result": true,
+        "entities": []
+      }
+    }
+  ],
+  "config_summary": {
+    "alias": "[Switch] [Inovelli Blue] : [Basement] [Movie Room] : [Press or Hold] : [Switch Mappings]",
+    "mode": "restart"
+  },
+  "script_execution": "finished",
+  "context": {
+    "id": "01M56GA5QBDGWB5JS5H79E7ZFQ",
+    "parent_id": null,
+    "user_id": null
+  }
+}

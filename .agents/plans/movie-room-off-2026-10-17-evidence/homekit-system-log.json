@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "source": "system",
+  "entries": [],
+  "total_entries": 0,
+  "returned_entries": 0,
+  "limit": 50,
+  "order": "newest",
+  "filters_applied": {
+    "search": "homekit"
+  }
+}

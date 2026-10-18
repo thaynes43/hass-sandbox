@@ -1,0 +1,62 @@
+{
+  "success": true,
+  "automation_id": "automation.light_inovelli_movie_room_motion_cleared_lights_off",
+  "trace_count": 5,
+  "total_available": 5,
+  "offset": 0,
+  "order": "newest",
+  "has_more": false,
+  "traces": [
+    {
+      "run_id": "15f791ef4c24cf75218025e8447b1d50",
+      "timestamp": {
+        "start": "2026-10-18T03:20:13.139557+00:00",
+        "finish": "2026-10-18T03:25:13.156707+00:00"
+      },
+      "state": "stopped",
+      "trigger": "binary_sensor.basement_movie_inovelli_presence_occupancy via template",
+      "execution": "finished"
+    },
+    {
+      "run_id": "5b4cc488bab8fbae5e882881973c95cd",
+      "timestamp": {
+        "start": "2026-10-18T03:13:49.149621+00:00",
+        "finish": "2026-10-18T03:18:49.159408+00:00"
+      },
+      "state": "stopped",
+      "trigger": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+      "execution": "finished"
+    },
+    {
+      "run_id": "250725a716dd8c675adf03624527c77d",
+      "timestamp": {
+        "start": "2026-10-17T03:03:59.087420+00:00",
+        "finish": "2026-10-17T03:08:59.121156+00:00"
+      },
+      "state": "stopped",
+      "trigger": "binary_sensor.basement_movie_inovelli_presence_occupancy via template",
+      "execution": "finished"
+    },
+    {
+      "run_id": "df1ec4be1f4fd5a8e9dde729bb01d937",
+      "timestamp": {
+        "start": "2026-10-17T03:01:46.015827+00:00",
+        "finish": "2026-10-17T03:03:59.098734+00:00"
+      },
+      "state": "stopped",
+      "trigger": "binary_sensor.basement_movie_inovelli_presence_occupancy via template",
+      "execution": "cancelled"
+    },
+    {
+      "run_id": "1f0173d93902aaa5b863c67357daaa53",
+      "timestamp": {
+        "start": "2026-10-16T22:07:11.806225+00:00",
+        "finish": "2026-10-16T22:12:11.821464+00:00"
+      },
+      "state": "stopped",
+      "trigger": "binary_sensor.basement_movie_inovelli_presence_occupancy via template",
+      "execution": "finished"
+    }
+  ],
+  "hint": "Use run_id with this tool to get detailed trace information"
+}

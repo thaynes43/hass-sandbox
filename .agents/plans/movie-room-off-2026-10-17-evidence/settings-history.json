@@ -1,0 +1,389 @@
+{
+  "data": {
+    "success": true,
+    "source": "history",
+    "entities": [
+      {
+        "entity_id": "input_select.basement_movie_room_occupancy_off_delay",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "00:05:00",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "options": [
+                "00:00:00",
+                "00:00:30",
+                "00:01:00",
+                "00:02:00",
+                "00:05:00",
+                "00:10:00",
+                "00:20:00"
+              ],
+              "friendly_name": "Basement Movie Room Occupancy Off Delay"
+            }
+          }
+        ],
+        "total_count": 1,
+        "offset": 0,
+        "limit": 1000,
+        "count": 1,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "input_select.basement_movie_room_tv_auto_off_delay",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "00:20:00",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "options": [
+                "00:05:00",
+                "00:10:00",
+                "00:15:00",
+                "00:20:00",
+                "00:30:00",
+                "00:45:00",
+                "01:00:00"
+              ],
+              "icon": "mdi:timer-outline",
+              "friendly_name": "Basement Movie Room TV Auto Off Delay"
+            }
+          }
+        ],
+        "total_count": 1,
+        "offset": 0,
+        "limit": 1000,
+        "count": 1,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "number.basement_movie_inovelli_presence_defaultled1colorwhenon",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "255",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_inovelli_presence DefaultLed1ColorWhenOn"
+            }
+          }
+        ],
+        "total_count": 1,
+        "offset": 0,
+        "limit": 1000,
+        "count": 1,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "input_text.inovelli_manual_hold",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "90",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "icon": "mdi:format-color-fill",
+              "friendly_name": "inovelli Manual Hold"
+            }
+          }
+        ],
+        "total_count": 1,
+        "offset": 0,
+        "limit": 1000,
+        "count": 1,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "input_text.inovelli_auto_hold",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "130",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "icon": "mdi:format-color-fill",
+              "friendly_name": "inovelli Auto Hold"
+            }
+          }
+        ],
+        "total_count": 1,
+        "offset": 0,
+        "limit": 1000,
+        "count": 1,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "select.basement_movie_inovelli_presence_mmwavecontrolwireddevice",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "Disabled",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_inovelli_presence MmwaveControlWiredDevice"
+            }
+          }
+        ],
+        "total_count": 1,
+        "offset": 0,
+        "limit": 1000,
+        "count": 1,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "automation.light_inovelli_movie_room_motion_cleared_lights_off",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "icon": "mdi:motion-sensor-off",
+              "friendly_name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.246297-04:00",
+            "last_updated": "2026-10-17T23:13:49.149725-04:00",
+            "attributes": {
+              "icon": "mdi:motion-sensor-off",
+              "friendly_name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.246297-04:00",
+            "last_updated": "2026-10-17T23:18:49.151884-04:00",
+            "attributes": {
+              "icon": "mdi:motion-sensor-off",
+              "friendly_name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.246297-04:00",
+            "last_updated": "2026-10-17T23:20:13.139721-04:00",
+            "attributes": {
+              "icon": "mdi:motion-sensor-off",
+              "friendly_name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.246297-04:00",
+            "last_updated": "2026-10-17T23:25:13.145278-04:00",
+            "attributes": {
+              "icon": "mdi:motion-sensor-off",
+              "friendly_name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]"
+            }
+          }
+        ],
+        "total_count": 5,
+        "offset": 0,
+        "limit": 1000,
+        "count": 5,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.247345-04:00",
+            "last_updated": "2026-10-17T22:03:11.637523-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.247345-04:00",
+            "last_updated": "2026-10-17T22:03:11.638330-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.247345-04:00",
+            "last_updated": "2026-10-17T22:03:25.371965-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.247345-04:00",
+            "last_updated": "2026-10-17T22:03:25.373326-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.247345-04:00",
+            "last_updated": "2026-10-17T23:13:49.150288-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.247345-04:00",
+            "last_updated": "2026-10-17T23:18:57.675765-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.247345-04:00",
+            "last_updated": "2026-10-17T23:18:57.681262-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.247345-04:00",
+            "last_updated": "2026-10-17T23:19:39.792278-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.247345-04:00",
+            "last_updated": "2026-10-17T23:19:39.793054-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.247345-04:00",
+            "last_updated": "2026-10-17T23:20:13.140637-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-12T12:03:18.247345-04:00",
+            "last_updated": "2026-10-17T23:20:13.141032-04:00",
+            "attributes": {
+              "icon": "mdi:television-off",
+              "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+            }
+          }
+        ],
+        "total_count": 12,
+        "offset": 0,
+        "limit": 1000,
+        "count": 12,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "assist_satellite.movie_room_voice_assist_satellite",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "idle",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "friendly_name": "Movie Room Voice Assist satellite"
+            }
+          }
+        ],
+        "total_count": 1,
+        "offset": 0,
+        "limit": 1000,
+        "count": 1,
+        "has_more": false,
+        "next_offset": null
+      }
+    ],
+    "period": {
+      "start": "2026-10-18T02:00:00+00:00",
+      "end": "2026-10-18T03:30:00+00:00"
+    },
+    "query_params": {
+      "minimal_response": false,
+      "significant_changes_only": false,
+      "limit": 1000,
+      "offset": 0,
+      "order": "asc"
+    }
+  },
+  "metadata": {
+    "home_assistant_timezone": "America/New_York",
+    "timestamp_format": "ISO 8601 (America/New_York)",
+    "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/New_York local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+  }
+}

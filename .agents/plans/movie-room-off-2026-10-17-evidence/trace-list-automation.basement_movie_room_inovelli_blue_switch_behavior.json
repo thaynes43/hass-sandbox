@@ -1,0 +1,62 @@
+{
+  "success": true,
+  "automation_id": "automation.basement_movie_room_inovelli_blue_switch_behavior",
+  "trace_count": 5,
+  "total_available": 5,
+  "offset": 0,
+  "order": "newest",
+  "has_more": false,
+  "traces": [
+    {
+      "run_id": "14af8ed283a59ec2ffd053ebbe41e4cf",
+      "timestamp": {
+        "start": "2026-10-18T03:19:08.304984+00:00",
+        "finish": "2026-10-18T03:19:08.316572+00:00"
+      },
+      "state": "stopped",
+      "trigger": "mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action",
+      "execution": "finished"
+    },
+    {
+      "run_id": "cb45804a18f171c8c64546e991efecd9",
+      "timestamp": {
+        "start": "2026-10-18T03:19:08.261545+00:00",
+        "finish": "2026-10-18T03:19:08.282503+00:00"
+      },
+      "state": "stopped",
+      "trigger": "mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action",
+      "execution": "finished"
+    },
+    {
+      "run_id": "f5bb8f6174cf3609feda3c3098a10603",
+      "timestamp": {
+        "start": "2026-10-18T03:19:06.327744+00:00",
+        "finish": "2026-10-18T03:19:06.343802+00:00"
+      },
+      "state": "stopped",
+      "trigger": "mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action",
+      "execution": "finished"
+    },
+    {
+      "run_id": "8cbc90874965b89605bae242f89a735d",
+      "timestamp": {
+        "start": "2026-10-18T03:19:01.611558+00:00",
+        "finish": "2026-10-18T03:19:01.625624+00:00"
+      },
+      "state": "stopped",
+      "trigger": "mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action",
+      "execution": "finished"
+    },
+    {
+      "run_id": "64326d5de7fc6432a23587376f4b52bc",
+      "timestamp": {
+        "start": "2026-10-18T02:03:16.435899+00:00",
+        "finish": "2026-10-18T02:03:16.449484+00:00"
+      },
+      "state": "stopped",
+      "trigger": "mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action",
+      "execution": "finished"
+    }
+  ],
+  "hint": "Use run_id with this tool to get detailed trace information"
+}

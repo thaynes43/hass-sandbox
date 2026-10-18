@@ -1,0 +1,69 @@
+{
+  "success": true,
+  "device": {
+    "device_id": "fc3bde4666b12f755ecf5579ec4fe633",
+    "name": "Aqara FP2 Presence Sensor 01",
+    "manufacturer": "Aqara",
+    "model": "PS-S02E",
+    "sw_version": "1.3.3",
+    "area_id": "rumpus_room",
+    "integration_type": "homekit_controller:accessory-id",
+    "integration_sources": [
+      "homekit_controller:accessory-id"
+    ],
+    "via_device_id": null,
+    "entities": [
+      {
+        "entity_id": "button.presence_sensor_fp2_a4b2_identify",
+        "name": "Presence-Sensor-FP2-A4B2 Identify",
+        "platform": "homekit_controller"
+      },
+      {
+        "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+        "name": "Presence-Sensor-FP2-A4B2 Presence Sensor 1",
+        "platform": "homekit_controller"
+      },
+      {
+        "entity_id": "sensor.basement_rumpus_room_aqara_fp2_01_light_sensor",
+        "name": "Presence-Sensor-FP2-A4B2 Light Sensor Light Level",
+        "platform": "homekit_controller"
+      }
+    ],
+    "name_by_user": "Aqara FP2 Presence Sensor 01",
+    "default_name": "Presence-Sensor-FP2-A4B2",
+    "hw_version": "1.0.0",
+    "serial_number": "54EF445AA4B2",
+    "disabled_by": null,
+    "labels": [],
+    "config_entries": [
+      "01KE8EJY0N5M0YKHPY6SQ0CE2R"
+    ],
+    "connections": [],
+    "identifiers": [
+      [
+        "homekit_controller:accessory-id",
+        "55:1C:B0:39:34:3F:aid:1"
+      ]
+    ]
+  },
+  "entities": [
+    {
+      "entity_id": "button.presence_sensor_fp2_a4b2_identify",
+      "name": "Presence-Sensor-FP2-A4B2 Identify",
+      "platform": "homekit_controller"
+    },
+    {
+      "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+      "name": "Presence-Sensor-FP2-A4B2 Presence Sensor 1",
+      "platform": "homekit_controller"
+    },
+    {
+      "entity_id": "sensor.basement_rumpus_room_aqara_fp2_01_light_sensor",
+      "name": "Presence-Sensor-FP2-A4B2 Light Sensor Light Level",
+      "platform": "homekit_controller"
+    }
+  ],
+  "entity_count": 3,
+  "queried_by": "entity_id",
+  "queried_entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor"
+}

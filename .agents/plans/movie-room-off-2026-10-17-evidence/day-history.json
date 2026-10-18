@@ -1,0 +1,210 @@
+{
+  "data": {
+    "success": true,
+    "source": "history",
+    "entities": [
+      {
+        "entity_id": "light.basement_movie_room_lights",
+        "period": {
+          "start": "2026-10-17T04:00:00+00:00",
+          "end": "2026-10-18T04:00:00+00:00"
+        },
+        "states": [
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T00:00:00-04:00",
+            "last_updated": "2026-10-17T00:00:00-04:00",
+            "attributes": {
+              "group_entities": [
+                "light.basement_movie_hue_recessed_01",
+                "light.basement_movie_hue_recessed_02",
+                "light.basement_movie_hue_recessed_03",
+                "light.basement_movie_hue_recessed_04",
+                "light.basement_movie_inovelli_presence"
+              ],
+              "friendly_name": "basement_movie_room_lights"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:12.491355-04:00",
+            "last_updated": "2026-10-17T22:03:12.491355-04:00",
+            "attributes": {
+              "group_entities": [
+                "light.basement_movie_hue_recessed_01",
+                "light.basement_movie_hue_recessed_02",
+                "light.basement_movie_hue_recessed_03",
+                "light.basement_movie_hue_recessed_04",
+                "light.basement_movie_inovelli_presence"
+              ],
+              "friendly_name": "basement_movie_room_lights"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:18:49.717106-04:00",
+            "last_updated": "2026-10-17T23:18:49.717106-04:00",
+            "attributes": {
+              "group_entities": [
+                "light.basement_movie_hue_recessed_01",
+                "light.basement_movie_hue_recessed_02",
+                "light.basement_movie_hue_recessed_03",
+                "light.basement_movie_hue_recessed_04",
+                "light.basement_movie_inovelli_presence"
+              ],
+              "friendly_name": "basement_movie_room_lights"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:01.676512-04:00",
+            "last_updated": "2026-10-17T23:19:01.676512-04:00",
+            "attributes": {
+              "group_entities": [
+                "light.basement_movie_hue_recessed_01",
+                "light.basement_movie_hue_recessed_02",
+                "light.basement_movie_hue_recessed_03",
+                "light.basement_movie_hue_recessed_04",
+                "light.basement_movie_inovelli_presence"
+              ],
+              "friendly_name": "basement_movie_room_lights"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:25:13.721351-04:00",
+            "last_updated": "2026-10-17T23:25:13.721351-04:00",
+            "attributes": {
+              "group_entities": [
+                "light.basement_movie_hue_recessed_01",
+                "light.basement_movie_hue_recessed_02",
+                "light.basement_movie_hue_recessed_03",
+                "light.basement_movie_hue_recessed_04",
+                "light.basement_movie_inovelli_presence"
+              ],
+              "friendly_name": "basement_movie_room_lights"
+            }
+          }
+        ],
+        "total_count": 5,
+        "offset": 0,
+        "limit": 1000,
+        "count": 5,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "light.basement_movie_room_ambient_lighting",
+        "period": {
+          "start": "2026-10-17T04:00:00+00:00",
+          "end": "2026-10-18T04:00:00+00:00"
+        },
+        "states": [
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T00:00:00-04:00",
+            "last_updated": "2026-10-17T00:00:00-04:00",
+            "attributes": {
+              "group_entities": [
+                "light.basement_movie_hue_right_floor_lamp",
+                "light.basement_movie_hue_left_floor_lamp",
+                "light.basement_movie_hue_play_01",
+                "light.basement_movie_hue_play_02",
+                "light.basement_movie_hue_gradient_65",
+                "light.basement_movie_hue_gradient_75"
+              ],
+              "friendly_name": "basement_movie_room_ambient_lighting"
+            }
+          }
+        ],
+        "total_count": 1,
+        "offset": 0,
+        "limit": 1000,
+        "count": 1,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "media_player.lg_webos_tv_oled83g4wua",
+        "period": {
+          "start": "2026-10-17T04:00:00+00:00",
+          "end": "2026-10-18T04:00:00+00:00"
+        },
+        "states": [
+          {
+            "state": "unavailable",
+            "last_changed": "2026-10-17T00:00:00-04:00",
+            "last_updated": "2026-10-17T00:00:00-04:00",
+            "attributes": {
+              "device_class": "tv",
+              "friendly_name": "Movie Room LG TV"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T22:03:25.371419-04:00",
+            "last_updated": "2026-10-17T22:03:25.371419-04:00",
+            "attributes": {
+              "device_class": "tv",
+              "friendly_name": "Movie Room LG TV"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:26.128556-04:00",
+            "last_updated": "2026-10-17T22:03:26.128556-04:00",
+            "attributes": {
+              "volume_level": 0,
+              "is_volume_muted": false,
+              "source": "STR-AZ5000ES",
+              "sound_output": "external_arc",
+              "assumed_state": true,
+              "device_class": "tv",
+              "friendly_name": "Movie Room LG TV"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:19:39.792014-04:00",
+            "last_updated": "2026-10-17T23:19:39.792014-04:00",
+            "attributes": {
+              "device_class": "tv",
+              "friendly_name": "Movie Room LG TV"
+            }
+          },
+          {
+            "state": "unavailable",
+            "last_changed": "2026-10-17T23:21:58.922282-04:00",
+            "last_updated": "2026-10-17T23:21:58.922282-04:00",
+            "attributes": {
+              "device_class": "tv",
+              "friendly_name": "Movie Room LG TV"
+            }
+          }
+        ],
+        "total_count": 5,
+        "offset": 0,
+        "limit": 1000,
+        "count": 5,
+        "has_more": false,
+        "next_offset": null
+      }
+    ],
+    "period": {
+      "start": "2026-10-17T04:00:00+00:00",
+      "end": "2026-10-18T04:00:00+00:00"
+    },
+    "query_params": {
+      "minimal_response": false,
+      "significant_changes_only": true,
+      "limit": 1000,
+      "offset": 0,
+      "order": "asc"
+    }
+  },
+  "metadata": {
+    "home_assistant_timezone": "America/New_York",
+    "timestamp_format": "ISO 8601 (America/New_York)",
+    "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/New_York local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+  }
+}

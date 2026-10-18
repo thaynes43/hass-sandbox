@@ -1,0 +1,62 @@
+{
+  "success": true,
+  "automation_id": "automation.basement_movie_room_zen37_scene_controller",
+  "trace_count": 5,
+  "total_available": 5,
+  "offset": 0,
+  "order": "newest",
+  "has_more": false,
+  "traces": [
+    {
+      "run_id": "e46e875acbf9a7f0b54e1bfa12650250",
+      "timestamp": {
+        "start": "2026-10-18T03:25:44.648548+00:00",
+        "finish": "2026-10-18T03:25:44.648868+00:00"
+      },
+      "state": "stopped",
+      "trigger": "event 'zwave_js_value_notification'",
+      "execution": "failed_conditions"
+    },
+    {
+      "run_id": "8422eeca8131abc6c32c708d5ecd87e6",
+      "timestamp": {
+        "start": "2026-10-18T03:23:49.258271+00:00",
+        "finish": "2026-10-18T03:23:49.258583+00:00"
+      },
+      "state": "stopped",
+      "trigger": "event 'zwave_js_value_notification'",
+      "execution": "failed_conditions"
+    },
+    {
+      "run_id": "0e473f0542bdbd2c5e773051739458ff",
+      "timestamp": {
+        "start": "2026-10-17T05:03:31.285804+00:00",
+        "finish": "2026-10-17T05:03:31.286460+00:00"
+      },
+      "state": "stopped",
+      "trigger": "event 'zwave_js_value_notification'",
+      "execution": "failed_conditions"
+    },
+    {
+      "run_id": "e7477e58d80038db4388d87124ac918c",
+      "timestamp": {
+        "start": "2026-10-17T04:02:48.037332+00:00",
+        "finish": "2026-10-17T04:02:48.037556+00:00"
+      },
+      "state": "stopped",
+      "trigger": "event 'zwave_js_value_notification'",
+      "execution": "failed_conditions"
+    },
+    {
+      "run_id": "498f0fd58cea88753fb6da3400e9bca3",
+      "timestamp": {
+        "start": "2026-10-17T03:49:27.599325+00:00",
+        "finish": "2026-10-17T03:49:27.599456+00:00"
+      },
+      "state": "stopped",
+      "trigger": "event 'zwave_js_value_notification'",
+      "execution": "failed_conditions"
+    }
+  ],
+  "hint": "Use run_id with this tool to get detailed trace information"
+}
