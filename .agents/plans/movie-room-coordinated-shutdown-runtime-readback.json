@@ -1,0 +1,598 @@
+[
+  {
+    "entity_id": "automation.light_inovelli_movie_room_motion_cleared_lights_off",
+    "response": {
+      "success": true,
+      "result": {
+        "config": {
+          "id": "1769402249599",
+          "alias": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]",
+          "description": "TV-off-only empty-room lights cleanup. The coordinated TV automation owns\nlights while TV is active. A confirmed TV off state with both sensors off and no\npending TV countdown starts a fresh configured lights delay (currently 5 minutes).\nTV becoming active or either sensor ceasing to report off cancels this run.\nAfter a confirmed off start, normal webOS off-to-unavailable is allowed during\nthe cleanup delay; unavailable/unknown alone never STARTS lights cleanup.\nManual/automation light holds are checked before and after the delay.\n",
+          "triggers": [
+            {
+              "trigger": "template",
+              "id": "lights_only",
+              "value_template": "{{ is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off') and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off') and is_state('media_player.lg_webos_tv_oled83g4wua', 'off') and is_state('input_boolean.basement_movie_room_tv_auto_off_enabled', 'off') }}"
+            },
+            {
+              "trigger": "template",
+              "id": "cancel",
+              "value_template": "{{ not (is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off') and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off')) or states('media_player.lg_webos_tv_oled83g4wua') not in ['off', 'unavailable', 'unknown'] }}"
+            }
+          ],
+          "conditions": [],
+          "actions": [
+            {
+              "condition": "trigger",
+              "id": "lights_only"
+            },
+            {
+              "condition": "template",
+              "value_template": "{# Only run when hold is clear #}\n{% set s = 'basement_movie_inovelli_presence' %}\n{% set manual = states('input_text.inovelli_manual_hold') | int(85) %}\n{% set auto = states('input_text.inovelli_auto_hold') | int(0) %}\n{% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}\n{{ led1 != manual and led1 != auto }}\n"
+            },
+            {
+              "delay": "{% set raw = states('input_select.basement_movie_room_occupancy_off_delay') %} {% set d = raw | replace('\"','') | replace(\"'\",\"\") | trim %} {{ d if d not in ['unknown','unavailable',''] else '00:05:00' }}"
+            },
+            {
+              "condition": "template",
+              "value_template": "{{\n  is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off')\n  and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off')\n}}\n"
+            },
+            {
+              "condition": "template",
+              "value_template": "{# Re-check hold state after the delay #}\n{% set s = 'basement_movie_inovelli_presence' %}\n{% set manual = states('input_text.inovelli_manual_hold') | int(85) %}\n{% set auto = states('input_text.inovelli_auto_hold') | int(0) %}\n{% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}\n{{ led1 != manual and led1 != auto }}\n"
+            },
+            {
+              "condition": "state",
+              "entity_id": "media_player.lg_webos_tv_oled83g4wua",
+              "state": [
+                "off",
+                "unavailable"
+              ]
+            },
+            {
+              "condition": "state",
+              "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled",
+              "state": "off"
+            },
+            {
+              "action": "light.turn_off",
+              "target": {
+                "entity_id": [
+                  "light.basement_movie_room_lights",
+                  "light.basement_movie_room_ambient_lighting"
+                ]
+              }
+            }
+          ],
+          "mode": "restart"
+        }
+      }
+    }
+  },
+  {
+    "entity_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+    "response": {
+      "success": true,
+      "result": {
+        "config": {
+          "id": "1770265925289",
+          "alias": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]",
+          "description": "Coordinated empty-room TV and lights shutdown. Both sensors must report off.\nPreserve the old silent absence delay: max(TV delay helper minus 5 minutes, 0),\ncurrently 15 minutes with the existing 00:20:00 helper. Then announce 15, 10, 5,\nand 1 minutes remaining, waiting 5/5/4/1 minutes AFTER each successful announcement.\nThus at least 15 minutes follow the first warning; nominal total absence is 30\nminutes plus announcement durations. Occupancy, invalid sensor state, TV off or\nunavailable/unknown, or cancelling the pending toggle aborts the entire run.\nTV becoming active while already empty starts a fresh full cycle. Light holds\nstill protect the lights; they do not change the existing TV auto-off policy.\nNo actions continue after a failed announcement. TV-off lights-only cleanup is\nowned by the separately guarded lights automation with a fresh delay.\n",
+          "triggers": [
+            {
+              "trigger": "template",
+              "id": "room_empty",
+              "value_template": "{{ is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off') and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off') }}"
+            },
+            {
+              "trigger": "template",
+              "id": "room_not_empty",
+              "value_template": "{{ not (is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off') and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off')) }}"
+            },
+            {
+              "trigger": "template",
+              "id": "tv_active",
+              "value_template": "{{ states('media_player.lg_webos_tv_oled83g4wua') not in ['off', 'unavailable', 'unknown'] }}"
+            },
+            {
+              "trigger": "template",
+              "id": "tv_inactive",
+              "value_template": "{{ not (states('media_player.lg_webos_tv_oled83g4wua') not in ['off', 'unavailable', 'unknown']) }}"
+            },
+            {
+              "trigger": "state",
+              "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled",
+              "to": "off",
+              "id": "pending_cancelled"
+            }
+          ],
+          "conditions": [],
+          "actions": [
+            {
+              "choose": [
+                {
+                  "conditions": [
+                    {
+                      "condition": "trigger",
+                      "id": [
+                        "room_not_empty",
+                        "tv_inactive",
+                        "pending_cancelled"
+                      ]
+                    }
+                  ],
+                  "sequence": [
+                    {
+                      "action": "input_boolean.turn_off",
+                      "target": {
+                        "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "conditions": [
+                    {
+                      "condition": "trigger",
+                      "id": [
+                        "room_empty",
+                        "tv_active"
+                      ]
+                    },
+                    {
+                      "condition": "state",
+                      "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+                      "state": "off"
+                    },
+                    {
+                      "condition": "state",
+                      "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+                      "state": "off"
+                    },
+                    {
+                      "condition": "not",
+                      "conditions": [
+                        {
+                          "condition": "state",
+                          "entity_id": "media_player.lg_webos_tv_oled83g4wua",
+                          "state": [
+                            "off",
+                            "unavailable",
+                            "unknown"
+                          ]
+                        }
+                      ]
+                    }
+                  ],
+                  "sequence": [
+                    {
+                      "alias": "Abort the whole shutdown on any service failure; always clear pending",
+                      "continue_on_error": true,
+                      "sequence": [
+                        {
+                          "action": "input_boolean.turn_on",
+                          "target": {
+                            "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled"
+                          }
+                        },
+                        {
+                          "variables": {
+                            "pre_warning_seconds": "{% set d = (states('input_select.basement_movie_room_tv_auto_off_delay')\n  | replace('\"','')\n  | replace(\"'\",'')\n  | trim) %}\n{% set d = d if d not in ['unknown','unavailable',''] else '00:20:00' %}\n{% set td = as_timedelta(d) %}\n{% set total_s = (td.total_seconds() | int(1200)) %}\n{% set pre = (total_s - 300) %}\n{{ pre if pre > 0 else 0 }}"
+                          }
+                        },
+                        {
+                          "wait_template": "{{ not (is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off') and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off') and states('media_player.lg_webos_tv_oled83g4wua') not in ['off', 'unavailable', 'unknown'] and is_state('input_boolean.basement_movie_room_tv_auto_off_enabled', 'on')) }}",
+                          "timeout": {
+                            "seconds": "{{ pre_warning_seconds | int(0) }}"
+                          },
+                          "continue_on_timeout": true
+                        },
+                        {
+                          "if": [
+                            {
+                              "condition": "not",
+                              "conditions": [
+                                {
+                                  "condition": "and",
+                                  "conditions": [
+                                    {
+                                      "condition": "state",
+                                      "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+                                      "state": "off"
+                                    },
+                                    {
+                                      "condition": "state",
+                                      "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+                                      "state": "off"
+                                    },
+                                    {
+                                      "condition": "not",
+                                      "conditions": [
+                                        {
+                                          "condition": "state",
+                                          "entity_id": "media_player.lg_webos_tv_oled83g4wua",
+                                          "state": [
+                                            "off",
+                                            "unavailable",
+                                            "unknown"
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "condition": "state",
+                                      "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled",
+                                      "state": "on"
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ],
+                          "then": [
+                            {
+                              "action": "input_boolean.turn_off",
+                              "target": {
+                                "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled"
+                              }
+                            },
+                            {
+                              "stop": "Shutdown cancelled: occupancy, TV state, or pending toggle changed"
+                            }
+                          ]
+                        },
+                        {
+                          "repeat": {
+                            "for_each": [
+                              {
+                                "remaining": 15,
+                                "wait": 5
+                              },
+                              {
+                                "remaining": 10,
+                                "wait": 5
+                              },
+                              {
+                                "remaining": 5,
+                                "wait": 4
+                              },
+                              {
+                                "remaining": 1,
+                                "wait": 1
+                              }
+                            ],
+                            "sequence": [
+                              {
+                                "if": [
+                                  {
+                                    "condition": "not",
+                                    "conditions": [
+                                      {
+                                        "condition": "and",
+                                        "conditions": [
+                                          {
+                                            "condition": "state",
+                                            "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+                                            "state": "off"
+                                          },
+                                          {
+                                            "condition": "state",
+                                            "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+                                            "state": "off"
+                                          },
+                                          {
+                                            "condition": "not",
+                                            "conditions": [
+                                              {
+                                                "condition": "state",
+                                                "entity_id": "media_player.lg_webos_tv_oled83g4wua",
+                                                "state": [
+                                                  "off",
+                                                  "unavailable",
+                                                  "unknown"
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "condition": "state",
+                                            "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled",
+                                            "state": "on"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ],
+                                "then": [
+                                  {
+                                    "action": "input_boolean.turn_off",
+                                    "target": {
+                                      "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled"
+                                    }
+                                  },
+                                  {
+                                    "stop": "Shutdown cancelled: occupancy, TV state, or pending toggle changed"
+                                  }
+                                ]
+                              },
+                              {
+                                "action": "assist_satellite.announce",
+                                "target": {
+                                  "entity_id": "assist_satellite.movie_room_voice_assist_satellite"
+                                },
+                                "data": {
+                                  "preannounce": true,
+                                  "message": "Movie Room appears empty. Turning off the TV and lights in {{ repeat.item.remaining }} minute{{ '' if repeat.item.remaining == 1 else 's' }}."
+                                }
+                              },
+                              {
+                                "wait_template": "{{ not (is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off') and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off') and states('media_player.lg_webos_tv_oled83g4wua') not in ['off', 'unavailable', 'unknown'] and is_state('input_boolean.basement_movie_room_tv_auto_off_enabled', 'on')) }}",
+                                "timeout": {
+                                  "minutes": "{{ repeat.item.wait }}"
+                                },
+                                "continue_on_timeout": true
+                              },
+                              {
+                                "if": [
+                                  {
+                                    "condition": "not",
+                                    "conditions": [
+                                      {
+                                        "condition": "and",
+                                        "conditions": [
+                                          {
+                                            "condition": "state",
+                                            "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+                                            "state": "off"
+                                          },
+                                          {
+                                            "condition": "state",
+                                            "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+                                            "state": "off"
+                                          },
+                                          {
+                                            "condition": "not",
+                                            "conditions": [
+                                              {
+                                                "condition": "state",
+                                                "entity_id": "media_player.lg_webos_tv_oled83g4wua",
+                                                "state": [
+                                                  "off",
+                                                  "unavailable",
+                                                  "unknown"
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "condition": "state",
+                                            "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled",
+                                            "state": "on"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ],
+                                "then": [
+                                  {
+                                    "action": "input_boolean.turn_off",
+                                    "target": {
+                                      "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled"
+                                    }
+                                  },
+                                  {
+                                    "stop": "Shutdown cancelled: occupancy, TV state, or pending toggle changed"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "if": [
+                            {
+                              "condition": "not",
+                              "conditions": [
+                                {
+                                  "condition": "and",
+                                  "conditions": [
+                                    {
+                                      "condition": "state",
+                                      "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+                                      "state": "off"
+                                    },
+                                    {
+                                      "condition": "state",
+                                      "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+                                      "state": "off"
+                                    },
+                                    {
+                                      "condition": "not",
+                                      "conditions": [
+                                        {
+                                          "condition": "state",
+                                          "entity_id": "media_player.lg_webos_tv_oled83g4wua",
+                                          "state": [
+                                            "off",
+                                            "unavailable",
+                                            "unknown"
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "condition": "state",
+                                      "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled",
+                                      "state": "on"
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ],
+                          "then": [
+                            {
+                              "action": "input_boolean.turn_off",
+                              "target": {
+                                "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled"
+                              }
+                            },
+                            {
+                              "stop": "Shutdown cancelled: occupancy, TV state, or pending toggle changed"
+                            }
+                          ]
+                        },
+                        {
+                          "if": [
+                            {
+                              "condition": "template",
+                              "value_template": "{# Only run when hold is clear #}\n{% set s = 'basement_movie_inovelli_presence' %}\n{% set manual = states('input_text.inovelli_manual_hold') | int(85) %}\n{% set auto = states('input_text.inovelli_auto_hold') | int(0) %}\n{% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}\n{{ led1 != manual and led1 != auto }}\n"
+                            }
+                          ],
+                          "then": [
+                            {
+                              "if": [
+                                {
+                                  "condition": "not",
+                                  "conditions": [
+                                    {
+                                      "condition": "and",
+                                      "conditions": [
+                                        {
+                                          "condition": "state",
+                                          "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+                                          "state": "off"
+                                        },
+                                        {
+                                          "condition": "state",
+                                          "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+                                          "state": "off"
+                                        },
+                                        {
+                                          "condition": "not",
+                                          "conditions": [
+                                            {
+                                              "condition": "state",
+                                              "entity_id": "media_player.lg_webos_tv_oled83g4wua",
+                                              "state": [
+                                                "off",
+                                                "unavailable",
+                                                "unknown"
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "condition": "state",
+                                          "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled",
+                                          "state": "on"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ],
+                              "then": [
+                                {
+                                  "action": "input_boolean.turn_off",
+                                  "target": {
+                                    "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled"
+                                  }
+                                },
+                                {
+                                  "stop": "Shutdown cancelled: occupancy, TV state, or pending toggle changed"
+                                }
+                              ]
+                            },
+                            {
+                              "action": "light.turn_off",
+                              "target": {
+                                "entity_id": [
+                                  "light.basement_movie_room_lights",
+                                  "light.basement_movie_room_ambient_lighting"
+                                ]
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "if": [
+                            {
+                              "condition": "not",
+                              "conditions": [
+                                {
+                                  "condition": "and",
+                                  "conditions": [
+                                    {
+                                      "condition": "state",
+                                      "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+                                      "state": "off"
+                                    },
+                                    {
+                                      "condition": "state",
+                                      "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+                                      "state": "off"
+                                    },
+                                    {
+                                      "condition": "not",
+                                      "conditions": [
+                                        {
+                                          "condition": "state",
+                                          "entity_id": "media_player.lg_webos_tv_oled83g4wua",
+                                          "state": [
+                                            "off",
+                                            "unavailable",
+                                            "unknown"
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "condition": "state",
+                                      "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled",
+                                      "state": "on"
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ],
+                          "then": [
+                            {
+                              "action": "input_boolean.turn_off",
+                              "target": {
+                                "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled"
+                              }
+                            },
+                            {
+                              "stop": "Shutdown cancelled: occupancy, TV state, or pending toggle changed"
+                            }
+                          ]
+                        },
+                        {
+                          "action": "media_player.turn_off",
+                          "target": {
+                            "entity_id": "media_player.lg_webos_tv_oled83g4wua"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "action": "input_boolean.turn_off",
+                      "target": {
+                        "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "mode": "restart"
+        }
+      }
+    }
+  }
+]
