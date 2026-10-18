@@ -159,7 +159,7 @@ two helpers were changed one at a time and each device was read back before the 
 ## Not verified
 
 - Behaviour across an HA restart (no restart was allowed). The helper config read-back shows
-  `initial: Disabled` on both helpers, which is what makes HA restore Disabled.
+  `initial: Disabled` on both helpers, which HA applies on every restart.
 - Live occupancy behaviour after the change (no physical tests). The next occupied period in
   each zone should show the load staying on until HA's 2 or 5 minute off-delay.
 
