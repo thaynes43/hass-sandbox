@@ -6,6 +6,12 @@ use_blueprint:
   path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
   input:
     switch: 418a905a17bca95187b8c3a3a3405b81
+    config_single:
+      - action: cover.close_cover
+        metadata: {}
+        data: {}
+        target:
+          entity_id: cover.1_4
     config_double:
       - action: script.inovelli_toggle_mmwave_hold_led_indicator
         data:
