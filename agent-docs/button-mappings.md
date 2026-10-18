@@ -285,7 +285,33 @@ The following smart switches are currently configured for AUX companions (so you
 |---|---|---|---|---|
 | Up paddle | Local on (load) |  |  | Multi-clicks unassigned |
 | Down paddle | Local off (load) |  |  | Multi-clicks unassigned |
-| Config |  | **Toggle hold** |  |  |
+| Config | **Close bathroom shade** → `cover.close_cover` on `cover.1_4` (First Floor Bathroom Shade) | **Toggle hold** |  | Shade controls for this bathroom are split across the three switches: vanity closes, fan light tilts open (1x) / opens (2x) |
+| AUX (placeholder) |  |  |  | TODO |
+
+### Downstairs — Bathroom Fan Light — Inovelli (On/Off)
+
+- **Type**: Inovelli Blue (on/off, no presence)
+- **HA entity**: `light.downstairs_bathroom_fan_light_inovelli_on_off`
+- **Source automation**: `automations/switch-buttons/inovelli-button-mapping/switch_inovelli_blue_downstairs_bathroom_fan_light_press_or_hold_switch_mappings.yaml`
+
+| Button | 1x | 2x | 3x | Notes |
+|---|---|---|---|---|
+| Up paddle | Local on (load) |  |  | Multi-clicks unassigned |
+| Down paddle | Local off (load) |  |  | Multi-clicks unassigned |
+| Config | **Tilt bathroom shade open** → `cover.open_cover_tilt` on `cover.1_4` (First Floor Bathroom Shade) | **Open bathroom shade** → `cover.open_cover` on `cover.1_4` |  | Vanity config 1x closes the same shade |
+| AUX (placeholder) |  |  |  | TODO |
+
+### Downstairs — Bathroom Shower — Inovelli (On/Off)
+
+- **Type**: Inovelli Blue (on/off, no presence)
+- **HA entity**: `light.downstairs_bathroom_shower_inovelli_on_off`
+- **Source automation**: `automations/switch-buttons/inovelli-button-mapping/switch_inovelli_blue_downstairs_bathroom_shower_press_or_hold_switch_mappings.yaml`
+
+| Button | 1x | 2x | 3x | Notes |
+|---|---|---|---|---|
+| Up paddle | Local on (load) |  |  | Multi-clicks unassigned |
+| Down paddle | Local off (load) |  |  | Multi-clicks unassigned |
+| Config | **All bathroom lights off** → `light.downstairs_bathroom_vanity_inovelli_presence`, `light.downstairs_bathroom_fan_light_inovelli_on_off`, `light.downstairs_bathroom_shower_inovelli_on_off` |  |  | |
 | AUX (placeholder) |  |  |  | TODO |
 
 ### Downstairs — Kitchen Recessed — Inovelli (Presence)
@@ -646,10 +672,8 @@ These also exist in HA and may need standardized config-button mappings.
 | HA entity (light.*) | Type (inferred) | SwitchType (HA) | AUX companions (requirements) | Notes |
 |---|---|---|---|---|
 | `light.downstairs_front_door_inovelli_on_off` | on/off | `Aux Switch` | TODO (>= 1): count + what AUX does |  |
-| `light.downstairs_bathroom_fan_light_inovelli_on_off` | on/off |  |  |  |
 | `light.upstairs_kids_bathroom_fan_light_inovelli_on_off` | on/off |  |  |  |
 | `light.basement_bathroom_fan_light_inovelli_on_off` | on/off | `Aux Switch` | TODO (>= 1): count + what AUX does |  |
-| `light.downstairs_bathroom_shower_inovelli_on_off` | on/off |  |  |  |
 | `light.downstairs_kitchen_island_inovelli_dimmer` | dimmer |  |  |  |
 | `light.downstairs_front_door_foyer_lights_inovelli_dimmer` | dimmer |  |  |  |
 | `light.downstairs_livingroom_sconce_inovelli_dimmer` | dimmer |  |  |  |
