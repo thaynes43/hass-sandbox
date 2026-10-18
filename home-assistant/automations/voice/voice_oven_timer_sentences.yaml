@@ -1,0 +1,93 @@
+# automation.voice_oven_timer_sentences (created live via MCP, 2026-10-18; id stripped). hass-sandbox #255.
+# Sentence trigger, so it runs before Home Assistant's built-in timer intents. Those intents take a timer
+# NAME, so without this "cancel the oven timer" / "stop the lower oven timer" became HassCancelTimer for a
+# Voice PE timer named "oven" ("Sorry, I couldn't find that timer"), "how long is left on the oven timer"
+# became HassTimerStatus ("No timers."), and "set a 10 minute timer for the oven" started a Voice PE timer
+# named "the oven" instead of the oven's own timer. The pipelines prefer local intents, so the agent never
+# saw any of them. Checked 2026-10-18 with the default agent's sentence debugger and a Kitchen pipeline run.
+# Everything goes to script.voice_oven_timer, the same tool the agents call, and its reply is spoken as is.
+# Tom's own phrasing, "set the oven timer for 1 hour", is NOT matched here: no built-in intent takes it,
+# so it reaches the agent, which converts the length to minutes better than a template can. Only the
+# set phrasings the built-in timer would steal are parsed here, by the `minutes` template below: digits
+# or number words up to ninety, hours, minutes, seconds, "an hour", "half an hour", "a quarter hour" and
+# "and a half".
+# The oven is read from the sentence: lower/bottom = lower, upper/top = upper, neither = upper for set
+# and both ovens for cancel and status (the script's rule).
+alias: '[Voice] Oven timer sentences (before the built-in timers)'
+description: 'Home Assistant''s built-in timer intents treat ''oven'' as the name of a Voice PE timer, so
+  ''cancel the oven timer'', ''how long is left on the oven timer'' and ''set a 10 minute timer for the
+  oven'' never reached the voice agents and never touched the Café oven (hass-sandbox #255). These sentence
+  triggers run before the built-in intents and call script.voice_oven_timer, the same tool the agents
+  use for every other oven-timer phrasing, such as ''set the oven timer for 1 hour''.'
+triggers:
+- trigger: conversation
+  id: cancel
+  command:
+  - (cancel|stop|clear|end|delete|reset) [the|my|our] [upper|top|lower|bottom] oven timer[s]
+  - (cancel|stop|clear|end|delete) [the|my|our] timer[s] (on|for|in|named|called) [the|my|our] [upper|top|lower|bottom]
+    oven[s]
+  - (cancel|stop|clear|end) (both|all) [of] [the|my|our] oven timers
+  - turn off [the|my|our] [upper|top|lower|bottom] oven timer[s]
+  - turn [the|my|our] [upper|top|lower|bottom] oven timer[s] off
+- trigger: conversation
+  id: check
+  command:
+  - '[how much] time [is] (left|remaining) on [the|my|our] [upper|top|lower|bottom] oven timer[s]'
+  - how long [is] (left|remaining) on [the|my|our] [upper|top|lower|bottom] oven timer[s]
+  - '[how much] time [is] (left|remaining) on [the|my|our] timer (on|for|in) [the|my|our] [upper|top|lower|bottom]
+    oven'
+  - how long [is] (left|remaining) on [the|my|our] timer (on|for|in) [the|my|our] [upper|top|lower|bottom]
+    oven
+  - '[the] [upper|top|lower|bottom] oven timer[s] status'
+  - status of [the|my|our] [upper|top|lower|bottom] oven timer[s]
+  - (check|read) [the|my|our] [upper|top|lower|bottom] oven timer[s]
+- trigger: conversation
+  id: set
+  command:
+  - (start|set|create|make) [a|an|the|my] {duration} timer (for|on|named|called) [the|my|our] [upper|top|lower|bottom]
+    oven
+  - (start|set|create|make) [a|an|the|my] timer (named|called) [the] [upper|top|lower|bottom] oven for {duration}
+  - (start|set|create|make) [a|an|the|my] timer for {duration} (for|on|named|called) [the|my|our] [upper|top|lower|bottom]
+    oven
+actions:
+- alias: 'Which oven, and for set the length in minutes. The parser normalises the captured duration
+    (number words to digits, twenty five = 25, "N and a half", "half an hour", "a quarter hour", "an hour"),
+    then adds up every <number> hour/minute/second it finds. 0 = not understood'
+  variables:
+    said: '{{ '' '' ~ (trigger.sentence | default('''', true) | lower | regex_replace(''[^a-z0-9]+'', ''
+      '') | trim) ~ '' '' }}'
+    which: '{{ ''lower'' if '' lower '' in said or '' bottom '' in said else (''upper'' if '' upper '' in
+      said or '' top '' in said else '''') }}'
+    minutes: '{% set words = {''one'': 1, ''two'': 2, ''three'': 3, ''four'': 4, ''five'': 5, ''six'': 6,
+      ''seven'': 7, ''eight'': 8, ''nine'': 9, ''ten'': 10, ''eleven'': 11, ''twelve'': 12, ''thirteen'':
+      13, ''fourteen'': 14, ''fifteen'': 15, ''sixteen'': 16, ''seventeen'': 17, ''eighteen'': 18, ''nineteen'':
+      19, ''twenty'': 20, ''thirty'': 30, ''forty'': 40, ''fifty'': 50, ''sixty'': 60, ''ninety'': 90} %}{%
+      set ns = namespace(t='' '' ~ ((trigger.slots or {}).get(''duration'', '''') | string | lower | regex_replace(''[^a-z0-9.]+'',
+      '' '') | regex_replace(''\\.(?!\\d)'', '' '')) ~ '' '') %}{% for w, n in words.items() %}{% set ns.t
+      = ns.t | regex_replace('' '' ~ w ~ '' '', '' '' ~ n ~ '' '') | regex_replace('' '' ~ w ~ '' '', ''
+      '' ~ n ~ '' '') %}{% endfor %}{% set ns.t = ns.t | regex_replace('' ([2-9])0 ([1-9]) '', '' \\1\\2 '')
+      | regex_replace('' (\\d+) and a half (hour|minute)'', '' \\1.5 \\2'') | regex_replace('' half (an? )?hour'',
+      '' 30 minute'') | regex_replace('' (a )?quarter (of )?(an )?hour'', '' 15 minute'') | regex_replace(''
+      an? (hour|minute|second)'', '' 1 \\1'') | regex_replace('' (\\d+) (hours?|minutes?) and a half '', ''
+      \\1.5 \\2 '') %}{% set h = ns.t | regex_findall('' (\\d+(?:\\.\\d+)?) ?h(?:ou)?rs? '') | map(''float'')
+      | sum %}{% set m = ns.t | regex_findall('' (\\d+(?:\\.\\d+)?) ?min(?:ute)?s? '') | map(''float'') | sum
+      %}{% set s = ns.t | regex_findall('' (\\d+(?:\\.\\d+)?) ?sec(?:ond)?s? '') | map(''float'') | sum %}{{
+      h * 60 + m + s / 60 }}'
+- if:
+  - condition: trigger
+    id: set
+  - condition: template
+    value_template: '{{ minutes | float(0) <= 0 }}'
+  then:
+  - set_conversation_response: 'I did not catch how long the oven timer should run. Say, for example: set
+      the oven timer for ten minutes.'
+  - stop: Duration not understood
+- action: script.voice_oven_timer
+  data:
+    action: '{{ trigger.id }}'
+    minutes: '{{ minutes if trigger.id == ''set'' else '''' }}'
+    oven: '{{ which }}'
+  response_variable: answer
+- set_conversation_response: '{{ answer.response | default(''The oven timer did not answer.'', true) }}'
+mode: queued
+max: 3
