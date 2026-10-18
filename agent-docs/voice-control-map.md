@@ -32,28 +32,23 @@ wall switches and scene controllers already give people, and must not fight the 
   Kitchen agent said "tomorrow, Friday, October ninth" over Thursday's menu, 1 run in 3. The agents
   have no date in their prompts, and the agent apparently took `date` for today's date, which is
   what `GetDateTime` returns under that key.
-- **Oven timer (2026-10-18, #255):** `script.voice_oven_timer` sets, cancels or reads the kitchen
-  timer of the Café double wall oven (HACS `ge_home`, `ge_home.set_timer` / `clear_timer` on
-  `sensor.nrz120804q_kitchen_timer` = upper and `sensor.kitchen_cafe_oven_nrz120804q_nrz120804q_lower_oven_kitchen_timer`
-  = lower). The agent passes `action` (set / cancel / check), `minutes` (it converts "1 hour" to 60)
-  and `oven` only when lower or upper is said; set defaults to the upper oven, cancel and check
-  cover both. The oven takes whole minutes, 1 to 360; the script rounds, refuses more, and waits for
-  the sensor to confirm (the services return early and swallow cloud failures). Cooking, temperature
-  and the cook timer are never touched. **The built-in timer intents steal oven phrasings:** they
-  read "oven" as a Voice PE timer name, so "cancel/stop the oven timer", "how long is left on the
-  oven timer" and "set a 10 minute timer for the oven" never reached an agent.
-  `automation.voice_oven_timer_sentences` (sentence triggers run before local intents) catches
-  those and calls the same script, parsing the length itself. Tom's phrasing "set the oven timer
-  for 1 hour" matches no built-in intent and goes to the agent. A plain "set a timer for 10 minutes"
-  stays a Voice PE timer. Kitchen pipeline, as the kitchen satellite, 2026-10-18: the OpenAI agent
-  called the tool with the right minutes in 12 of 12 set requests (1.1–3.3 s to the call, ~3–5 s to
-  the reply); the sentence-trigger phrasings answer in 0.01–1.8 s. The shared prompt still lists
-  "ovens" as not available by voice; the agent used the tool anyway. If an agent ever refuses an
-  oven timer, narrow that line rather than adding a new one. Not covered: "add 5 minutes to the
-  oven timer" (HassIncreaseTimer answers "couldn't find that timer"), pause/resume, and a set phrase
-  with no verb ("10 minute timer for the oven" still starts a Voice PE timer named "the oven"). The
-  automation's length parser refuses anything it cannot read fully ("a hundred minutes" asks again)
-  rather than set a wrong length.
+- **Oven timer = a Voice PE timer (2026-10-18, #255).** "Oven timer" by voice is the Voice PE
+  built-in timer NAMED "oven" on the room's satellite, not the Café wall oven's own timer. The
+  built-in intents handle "set a 2 minute timer named oven", "how long is left on the oven timer"
+  and "cancel the oven timer" locally; the box rings and shows its LED countdown, the oven shows
+  nothing. `script.voice_oven_timer` and `automation.voice_oven_timer_sentences` were deleted live
+  and from the repo on 2026-10-18; do not rebuild them. **Why not the oven:** `ge_home.set_timer`
+  writes ERD 0x5105 (minutes, 2-byte big-endian) and the oven counts it down, but the LCD on this
+  Café CTD90FP4N4W2 never draws a remote timer (tested during Bake and idle; a timer started on the
+  touchscreen publishes the same 0x5105 and does show). The remote one runs hidden and cannot be
+  dismissed on the panel, ha_gehome#123 reports an LCD Café locking up or ringing on expiry, and
+  the SmartHQ app has no kitchen timer, only Cook Time. Details and the test log: hass-sandbox #255.
+  Text-tested as the Kitchen satellite 2026-10-18: "set a 2 minute timer named oven" / "...for the
+  oven" start a Voice PE timer, "how long is left on the oven timer" and "cancel all timers" work;
+  the oven sensors stayed 0. Known gaps: "cancel the oven timer" cannot find a timer named "the
+  oven"; the Kitchen OpenAI agent answers "set the oven timer for 2 minutes" and "set an oven timer
+  for 2 minutes" with a refusal ("can't control the oven"), because the shared prompt lists ovens
+  as not available by voice and it has no timer tool; only the Voice PE phrasing above works.
 
 ## Basement
 
@@ -313,8 +308,8 @@ entrance + mudroom + the three bathroom loads off). Both are literal copies of t
 and are allowed by the guard's `script.voice_*` pattern (per-name entries from v1.18.5, the pattern
 since v1.19.2). The **mode** of
 `climate.first_floor_ecobee` ("downstairs": cool / heat / auto / off) goes through
-`script.voice_thermostat` (2026-09-20) — see *Basement*. The wall oven's kitchen timer goes through
-`script.voice_oven_timer` (2026-10-18) — see *House-wide mechanisms*.
+`script.voice_thermostat` (2026-09-20) — see *Basement*. The wall oven has no voice timer: "oven timer" is a Voice PE
+timer named oven (2026-10-18) — see *House-wide mechanisms*.
 
 | Area | Physical controls (mapped buttons only) | Concepts → handle | Ownership / voice caveat |
 |---|---|---|---|
