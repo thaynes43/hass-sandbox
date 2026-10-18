@@ -6,6 +6,12 @@
  * Auto-rotates through categories; supports swipe/arrow navigation within
  * a category. Tap a poster to open the detail popup.
  *
+ * Fixed height: the wall displays are laid out to the pixel and the card swaps
+ * tabs on a timer, so every tab must render the same height. The poster art,
+ * the caption strip (title + subtitle line, reserved even when a category has
+ * no subtitles) and the poster row are pinned in px below (--md-* in :host);
+ * long text ellipsizes instead of wrapping. 293 px total on both dashboards.
+ *
  * Reads:  sensor.media_dashboard_status — overall state + categories attribute
  * Writes: script.media_dashboard_relay  — dismiss command
  *
@@ -412,6 +418,14 @@ class MediaDashboardCard extends HTMLElement {
     return `
       :host {
         display: block;
+        /* Height budget — keep every tab the same height (see header comment).
+           Row = art + caption + 2px poster border; card = 293px. */
+        --md-art-h: 146px;
+        --md-title-lh: 14px;
+        --md-sub-lh: 12px;
+        --md-info-pad: 4px;
+        --md-info-h: calc(var(--md-title-lh) + var(--md-sub-lh) + 2 * var(--md-info-pad));
+        --md-row-h: calc(var(--md-art-h) + var(--md-info-h) + 2px);
       }
 
       .md-card {
@@ -484,7 +498,8 @@ class MediaDashboardCard extends HTMLElement {
       .md-poster-row {
         display: flex;
         gap: 8px;
-        align-items: flex-start;
+        align-items: stretch;
+        height: var(--md-row-h);
       }
 
       .md-poster {
@@ -504,8 +519,6 @@ class MediaDashboardCard extends HTMLElement {
       }
 
       .md-poster-empty {
-        aspect-ratio: 2 / 3;
-        max-height: 150px;
         cursor: default;
         background: rgba(255, 255, 255, 0.03);
         border-color: rgba(255, 255, 255, 0.04);
@@ -514,8 +527,7 @@ class MediaDashboardCard extends HTMLElement {
       .md-poster-img {
         display: block;
         width: 100%;
-        aspect-ratio: 2 / 3;
-        max-height: 150px;
+        height: var(--md-art-h);
         object-fit: cover;
         background: rgba(255, 255, 255, 0.05);
       }
@@ -525,8 +537,7 @@ class MediaDashboardCard extends HTMLElement {
         align-items: center;
         justify-content: center;
         width: 100%;
-        aspect-ratio: 2 / 3;
-        max-height: 150px;
+        height: var(--md-art-h);
         background: rgba(255, 255, 255, 0.05);
       }
 
@@ -537,12 +548,23 @@ class MediaDashboardCard extends HTMLElement {
         text-transform: uppercase;
       }
 
+      /* Caption strip: fixed height whatever the text. A category without
+         subtitles (Theaters) centres the title in the same strip. */
       .md-poster-info {
-        padding: 5px 6px 6px;
+        box-sizing: border-box;
+        height: var(--md-info-h);
+        padding: var(--md-info-pad) 6px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        overflow: hidden;
         background: rgba(10, 10, 14, 0.7);
       }
 
       .md-poster-title {
+        flex: none;
+        height: var(--md-title-lh);
+        line-height: var(--md-title-lh);
         font-size: 11px;
         font-weight: 600;
         color: rgba(240, 243, 255, 0.9);
@@ -553,13 +575,19 @@ class MediaDashboardCard extends HTMLElement {
       }
 
       .md-poster-sub {
-        margin-top: 1px;
+        flex: none;
+        height: var(--md-sub-lh);
+        line-height: var(--md-sub-lh);
         font-size: 10px;
         font-weight: 400;
         color: rgba(200, 205, 220, 0.6);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+
+      .md-poster-sub:empty {
+        display: none;
       }
 
       /* ---- Liked badge ---- */
@@ -618,8 +646,11 @@ class MediaDashboardCard extends HTMLElement {
 
       .md-empty {
         flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         text-align: center;
-        padding: 24px 8px;
+        padding: 0 8px;
         font-size: 12px;
         color: rgba(200, 205, 220, 0.45);
         font-style: italic;
@@ -641,6 +672,7 @@ class MediaDashboardCard extends HTMLElement {
         cursor: pointer;
         padding: 4px 2px;
         font-size: 10px;
+        line-height: 16px;
         font-weight: 600;
         letter-spacing: 0.04em;
         text-transform: uppercase;
