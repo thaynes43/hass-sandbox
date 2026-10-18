@@ -217,10 +217,10 @@ was misread by the LLM), `script.voice_lock_all_doors` (front, side, bulkhead; l
 `script.voice_close_garage_doors` (close-only). The `input_text.*_entry_locks_status` roll-ups
 stay invisible to Assist (no tool reads `input_text`).
 
-Defects found (open; the dead spa-light auto-hold trigger was fixed on 2026-09-19):
-`input_select.garage_interior_mudroom_mmwave_normal_mode` reads
-"Occupancy (default)" while the switch is `Disabled`, so the next Config 2x re-enables local
-mmWave control instead of holding; the spotlight mapping passes an `input_number` as
+Defects found (open; the dead spa-light auto-hold trigger was fixed on 2026-09-19, and the
+garage mudroom normal-mode helper on 2026-10-18: its `initial` was "Occupancy (default)", which
+reset it on every HA restart and re-enabled the switch's local mmWave control. It is now
+`initial: Disabled`.) The spotlight mapping passes an `input_number` as
 `prev_led_color_helper` (written with `input_text.set_value`, so it never updates);
 `automation.notify_garage_ratgdo_door_open_close_tom_iphone` is off; 14 exterior automations
 have no repo mirror.

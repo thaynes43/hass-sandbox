@@ -230,6 +230,11 @@ Provide `helper_id` (the slug after the domain in entity_id). No discovery call 
 
 - **Entity id convention**: `input_select.<zone>_mmwave_normal_mode`
 - **Options**: must match `select.*_mmwavecontrolwireddevice` options.
+- **`initial` wins on every HA restart.** Setting it disables restore, and the clear-hold
+  script then pushes that value onto the switch. Use the zone's intended mode: `Disabled` for
+  zones that automations own. The garage mudroom helper had `initial: "Occupancy (default)"`.
+  After each restart the switch cut the garage lights in firmware whenever its own radar
+  cleared, ignoring the other sensors (fixed 2026-10-18).
 
 After creating, also update:
 
