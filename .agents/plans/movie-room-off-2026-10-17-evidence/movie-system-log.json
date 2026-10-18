@@ -1,0 +1,32 @@
+{
+  "success": true,
+  "source": "system",
+  "entries": [
+    {
+      "name": "homeassistant.components.webostv",
+      "message": [
+        "Error fetching White Room LG TV data: Device White Room LG TV is unavailable",
+        "Error fetching Movie Room LG TV data: Device Movie Room LG TV is unavailable",
+        "Error fetching Blue Room LG TV data: Device Blue Room LG TV is unavailable",
+        "Error fetching Primary Bedroom LG TV data: Device Primary Bedroom LG TV is unavailable",
+        "Error fetching Pink Room LG TV data: Device Pink Room LG TV is unavailable"
+      ],
+      "level": "ERROR",
+      "source": [
+        "helpers/update_coordinator.py",
+        512
+      ],
+      "timestamp": 1792293718.9215786,
+      "exception": "",
+      "count": 37,
+      "first_occurred": 1791821009.8898966
+    }
+  ],
+  "total_entries": 1,
+  "returned_entries": 1,
+  "limit": 100,
+  "order": "newest",
+  "filters_applied": {
+    "search": "movie"
+  }
+}

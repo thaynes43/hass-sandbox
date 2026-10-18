@@ -1,0 +1,249 @@
+{
+  "success": true,
+  "automation_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+  "run_id": "d9ee2d708d3a30df305f93f7ef9b2d69",
+  "timestamp": {
+    "start": "2026-10-18T03:13:49.150219+00:00",
+    "finish": "2026-10-18T03:18:57.675699+00:00"
+  },
+  "state": "stopped",
+  "trigger": {
+    "platform": "template",
+    "description": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+    "to_state": "off",
+    "from_state": "on",
+    "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor"
+  },
+  "action_trace": [
+    {
+      "path": "action/0",
+      "timestamp": "2026-10-18T03:13:49.150359+00:00",
+      "result": {
+        "choice": 1
+      },
+      "variables": {
+        "context": {
+          "id": "01M56G0MJYW9DXGT4CD7J7PKEG",
+          "parent_id": "01M56G0MJXGNV8K7G2J36FP3BJ",
+          "user_id": null
+        },
+        "pre_warning_seconds": 900,
+        "wait": {
+          "remaining": 591.4850534979487,
+          "completed": true,
+          "trigger": {
+            "platform": "template",
+            "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+            "from_state": {
+              "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+              "state": "off",
+              "attributes": {
+                "device_class": "occupancy",
+                "friendly_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+              },
+              "last_changed": "2026-10-18T03:13:49.149431+00:00",
+              "last_reported": "2026-10-18T03:13:49.149431+00:00",
+              "last_updated": "2026-10-18T03:13:49.149431+00:00",
+              "context": {
+                "id": "01M56G0MJXGNV8K7G2J36FP3BJ",
+                "parent_id": null,
+                "user_id": null
+              }
+            },
+            "to_state": {
+              "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+              "state": "on",
+              "attributes": {
+                "device_class": "occupancy",
+                "friendly_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+              },
+              "last_changed": "2026-10-18T03:18:57.664803+00:00",
+              "last_reported": "2026-10-18T03:18:57.664803+00:00",
+              "last_updated": "2026-10-18T03:18:57.664803+00:00",
+              "context": {
+                "id": "01M56GA1W068DE04P7K67RFNR8",
+                "parent_id": null,
+                "user_id": null
+              }
+            },
+            "id": "0",
+            "idx": "0",
+            "alias": null,
+            "for": null,
+            "description": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template"
+          }
+        }
+      }
+    },
+    {
+      "path": "action/0/choose/0",
+      "timestamp": "2026-10-18T03:13:49.150397+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/0/choose/0/conditions/0",
+      "timestamp": "2026-10-18T03:13:49.150409+00:00",
+      "result": {
+        "result": false
+      }
+    },
+    {
+      "path": "action/0/choose/1",
+      "timestamp": "2026-10-18T03:13:49.150431+00:00",
+      "result": {
+        "result": true
+      }
+    },
+    {
+      "path": "action/0/choose/1/conditions/0",
+      "timestamp": "2026-10-18T03:13:49.150439+00:00",
+      "result": {
+        "result": true
+      }
+    },
+    {
+      "path": "action/0/choose/1/conditions/1",
+      "timestamp": "2026-10-18T03:13:49.150448+00:00",
+      "result": {
+        "result": true,
+        "entities": [
+          "media_player.lg_webos_tv_oled83g4wua"
+        ]
+      }
+    },
+    {
+      "path": "action/0/choose/1/sequence/0",
+      "timestamp": "2026-10-18T03:13:49.150529+00:00",
+      "result": {
+        "params": {
+          "domain": "input_boolean",
+          "service": "turn_on",
+          "service_data": {},
+          "target": {
+            "entity_id": [
+              "input_boolean.basement_movie_room_tv_auto_off_enabled"
+            ]
+          }
+        },
+        "running_script": false
+      }
+    },
+    {
+      "path": "action/0/choose/1/sequence/1",
+      "timestamp": "2026-10-18T03:13:49.150722+00:00",
+      "variables": {
+        "pre_warning_seconds": 900
+      }
+    },
+    {
+      "path": "action/0/choose/1/sequence/2",
+      "timestamp": "2026-10-18T03:13:49.150835+00:00",
+      "result": {
+        "wait": {
+          "remaining": 591.4850534979487,
+          "completed": true,
+          "trigger": {
+            "platform": "template",
+            "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+            "from_state": {
+              "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+              "state": "off",
+              "attributes": {
+                "device_class": "occupancy",
+                "friendly_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+              },
+              "last_changed": "2026-10-18T03:13:49.149431+00:00",
+              "last_reported": "2026-10-18T03:13:49.149431+00:00",
+              "last_updated": "2026-10-18T03:13:49.149431+00:00",
+              "context": {
+                "id": "01M56G0MJXGNV8K7G2J36FP3BJ",
+                "parent_id": null,
+                "user_id": null
+              }
+            },
+            "to_state": {
+              "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+              "state": "on",
+              "attributes": {
+                "device_class": "occupancy",
+                "friendly_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+              },
+              "last_changed": "2026-10-18T03:18:57.664803+00:00",
+              "last_reported": "2026-10-18T03:18:57.664803+00:00",
+              "last_updated": "2026-10-18T03:18:57.664803+00:00",
+              "context": {
+                "id": "01M56GA1W068DE04P7K67RFNR8",
+                "parent_id": null,
+                "user_id": null
+              }
+            },
+            "id": "0",
+            "idx": "0",
+            "alias": null,
+            "for": null,
+            "description": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template"
+          }
+        }
+      },
+      "variables": {
+        "wait": {
+          "remaining": 591.4850534979487,
+          "completed": true,
+          "trigger": {
+            "platform": "template",
+            "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+            "from_state": {
+              "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+              "state": "off",
+              "attributes": {
+                "device_class": "occupancy",
+                "friendly_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+              },
+              "last_changed": "2026-10-18T03:13:49.149431+00:00",
+              "last_reported": "2026-10-18T03:13:49.149431+00:00",
+              "last_updated": "2026-10-18T03:13:49.149431+00:00",
+              "context": {
+                "id": "01M56G0MJXGNV8K7G2J36FP3BJ",
+                "parent_id": null,
+                "user_id": null
+              }
+            },
+            "to_state": {
+              "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+              "state": "on",
+              "attributes": {
+                "device_class": "occupancy",
+                "friendly_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+              },
+              "last_changed": "2026-10-18T03:18:57.664803+00:00",
+              "last_reported": "2026-10-18T03:18:57.664803+00:00",
+              "last_updated": "2026-10-18T03:18:57.664803+00:00",
+              "context": {
+                "id": "01M56GA1W068DE04P7K67RFNR8",
+                "parent_id": null,
+                "user_id": null
+              }
+            },
+            "id": "0",
+            "idx": "0",
+            "alias": null,
+            "for": null,
+            "description": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template"
+          }
+        }
+      }
+    }
+  ],
+  "config_summary": {
+    "alias": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]",
+    "mode": "restart"
+  },
+  "script_execution": "cancelled",
+  "context": {
+    "id": "01M56G0MJYW9DXGT4CD7J7PKEG",
+    "parent_id": "01M56G0MJXGNV8K7G2J36FP3BJ",
+    "user_id": null
+  }
+}

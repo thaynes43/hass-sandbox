@@ -1,0 +1,97 @@
+{
+  "success": true,
+  "automation_id": "automation.light_inovelli_movie_room_motion_cleared_lights_off",
+  "run_id": "15f791ef4c24cf75218025e8447b1d50",
+  "timestamp": {
+    "start": "2026-10-18T03:20:13.139557+00:00",
+    "finish": "2026-10-18T03:25:13.156707+00:00"
+  },
+  "state": "stopped",
+  "trigger": {
+    "platform": "template",
+    "description": "binary_sensor.basement_movie_inovelli_presence_occupancy via template",
+    "to_state": "off",
+    "from_state": "on",
+    "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy"
+  },
+  "action_trace": [
+    {
+      "path": "action/0",
+      "timestamp": "2026-10-18T03:20:13.139885+00:00",
+      "result": {
+        "result": true,
+        "entities": [
+          "number.basement_movie_inovelli_presence_defaultled1colorwhenon",
+          "input_text.inovelli_manual_hold",
+          "input_text.inovelli_auto_hold"
+        ]
+      },
+      "variables": {
+        "context": {
+          "id": "01M56GCBJKHB3QP4G77NCK8AYJ",
+          "parent_id": "01M56GCBJKAP7QN991J0M1YBRB",
+          "user_id": null
+        }
+      }
+    },
+    {
+      "path": "action/1",
+      "timestamp": "2026-10-18T03:20:13.140131+00:00",
+      "result": {
+        "delay": 300,
+        "done": true
+      }
+    },
+    {
+      "path": "action/2",
+      "timestamp": "2026-10-18T03:25:13.141235+00:00",
+      "result": {
+        "result": true,
+        "entities": [
+          "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+          "binary_sensor.basement_movie_inovelli_presence_occupancy"
+        ]
+      }
+    },
+    {
+      "path": "action/3",
+      "timestamp": "2026-10-18T03:25:13.141796+00:00",
+      "result": {
+        "result": true,
+        "entities": [
+          "number.basement_movie_inovelli_presence_defaultled1colorwhenon",
+          "input_text.inovelli_manual_hold",
+          "input_text.inovelli_auto_hold"
+        ]
+      }
+    },
+    {
+      "path": "action/4",
+      "timestamp": "2026-10-18T03:25:13.142215+00:00",
+      "result": {
+        "params": {
+          "domain": "light",
+          "service": "turn_off",
+          "service_data": {},
+          "target": {
+            "entity_id": [
+              "light.basement_movie_room_lights",
+              "light.basement_movie_room_ambient_lighting"
+            ]
+          }
+        },
+        "running_script": false
+      }
+    }
+  ],
+  "config_summary": {
+    "alias": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]",
+    "mode": "restart"
+  },
+  "script_execution": "finished",
+  "context": {
+    "id": "01M56GCBJKHB3QP4G77NCK8AYJ",
+    "parent_id": "01M56GCBJKAP7QN991J0M1YBRB",
+    "user_id": null
+  }
+}

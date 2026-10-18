@@ -1,0 +1,474 @@
+{
+  "status": "Stopped at explicit user checkpoint; ready PR/CI permission pending",
+  "code_commit": "6753b38fca6d2b95f3b8528d463d9c73db791a13",
+  "deployment_already_applied_before_checkpoint": true,
+  "before": {
+    "data": {
+      "success": true,
+      "count": 5,
+      "states": {
+        "automation.light_inovelli_movie_room_motion_cleared_lights_off": {
+          "entity_id": "automation.light_inovelli_movie_room_motion_cleared_lights_off",
+          "state": "on",
+          "attributes": {
+            "id": "1769402249599",
+            "last_triggered": "2026-10-17T23:20:13.139688-04:00",
+            "mode": "restart",
+            "current": 0,
+            "icon": "mdi:motion-sensor-off",
+            "friendly_name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]"
+          },
+          "last_changed": "2026-10-12T12:03:18.246297-04:00",
+          "last_reported": "2026-10-17T23:25:13.145278-04:00",
+          "last_updated": "2026-10-17T23:25:13.145278-04:00",
+          "context": {
+            "id": "01M56GNGHSAQ2PDFBPZ21KDJNP",
+            "parent_id": null,
+            "user_id": null
+          }
+        },
+        "automation.media_basement_movie_room_no_occupancy_tv_off": {
+          "entity_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+          "state": "on",
+          "attributes": {
+            "id": "1770265925289",
+            "last_triggered": "2026-10-17T23:20:13.140618-04:00",
+            "mode": "restart",
+            "current": 0,
+            "icon": "mdi:television-off",
+            "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+          },
+          "last_changed": "2026-10-12T12:03:18.247345-04:00",
+          "last_reported": "2026-10-17T23:20:13.141032-04:00",
+          "last_updated": "2026-10-17T23:20:13.141032-04:00",
+          "context": {
+            "id": "01M56GCBJMGVHRHXD21SXSM596",
+            "parent_id": "01M56GCBJKAP7QN991J0M1YBRB",
+            "user_id": null
+          }
+        },
+        "input_boolean.basement_movie_room_tv_auto_off_enabled": {
+          "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled",
+          "state": "off",
+          "attributes": {
+            "editable": true,
+            "icon": "mdi:television-off",
+            "friendly_name": "Basement Movie Room TV Auto-Off Pending (toggle off to cancel)"
+          },
+          "last_changed": "2026-10-17T23:18:57.681157-04:00",
+          "last_reported": "2026-10-17T23:18:57.681157-04:00",
+          "last_updated": "2026-10-17T23:18:57.681157-04:00",
+          "context": {
+            "id": "01M56GA1W10HJ862DM3SM877PA",
+            "parent_id": "01M56GA1W068DE04P7K67RFNR8",
+            "user_id": null
+          }
+        },
+        "media_player.lg_webos_tv_oled83g4wua": {
+          "entity_id": "media_player.lg_webos_tv_oled83g4wua",
+          "state": "unavailable",
+          "attributes": {
+            "source_list": [
+              "8 Ball Pool",
+              "Amazon Alexa",
+              "Apple OTT",
+              "Apple TV",
+              "Apps",
+              "Camera",
+              "Copilot",
+              "Disney+",
+              "Fubo: Watch Live TV & Sports",
+              "HBO Max",
+              "HDMI 3",
+              "HDMI 4",
+              "Home Hub",
+              "Hulu",
+              "LG Channels",
+              "LG Gallery+",
+              "LG Gaming Portal",
+              "LG Link",
+              "LG Movies & TV",
+              "LG Radio+",
+              "LG Sports Playbook",
+              "LG Streaming Week",
+              "LG Travel+",
+              "Live TV",
+              "Media Player",
+              "Memory Care",
+              "Multi View",
+              "Mysti Stardust",
+              "Netflix",
+              "Peacock",
+              "Pluto TV",
+              "Prime Video",
+              "SHIELD",
+              "STR-AZ5000ES",
+              "ShopTime",
+              "Sling TV",
+              "Sports",
+              "Tubi: Free Movies & TV",
+              "Web Browser",
+              "Weekend Games - Song Quiz, Jeopardy! and CoComelon",
+              "YouTube"
+            ],
+            "device_class": "tv",
+            "friendly_name": "Movie Room LG TV",
+            "supported_features": 24381
+          },
+          "last_changed": "2026-10-17T23:21:58.922282-04:00",
+          "last_reported": "2026-10-17T23:21:58.922282-04:00",
+          "last_updated": "2026-10-17T23:21:58.922282-04:00",
+          "context": {
+            "id": "01M56GFJWAD4W58X5HB0WEM976",
+            "parent_id": null,
+            "user_id": null
+          }
+        },
+        "automation.cycle_photo_frame_image": {
+          "entity_id": "automation.cycle_photo_frame_image",
+          "state": "on",
+          "attributes": {
+            "id": "1748028840692",
+            "last_triggered": "2026-10-18T00:14:10.118784-04:00",
+            "mode": "single",
+            "current": 0,
+            "icon": "mdi:camera",
+            "friendly_name": "Cycle Photo Frame Image"
+          },
+          "last_changed": "2026-10-12T12:03:18.238939-04:00",
+          "last_reported": "2026-10-18T00:14:10.129497-04:00",
+          "last_updated": "2026-10-18T00:14:10.129497-04:00",
+          "context": {
+            "id": "01M56KF4P6CCDWEY86WTMATK28",
+            "parent_id": null,
+            "user_id": null
+          }
+        }
+      }
+    },
+    "metadata": {
+      "home_assistant_timezone": "America/New_York",
+      "timestamp_format": "ISO 8601 (America/New_York)",
+      "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/New_York local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+    }
+  },
+  "after": {
+    "data": {
+      "success": true,
+      "count": 8,
+      "states": {
+        "automation.light_inovelli_movie_room_motion_cleared_lights_off": {
+          "entity_id": "automation.light_inovelli_movie_room_motion_cleared_lights_off",
+          "state": "on",
+          "attributes": {
+            "id": "1769402249599",
+            "last_triggered": "2026-10-17T23:20:13.139688-04:00",
+            "mode": "restart",
+            "current": 0,
+            "icon": "mdi:motion-sensor-off",
+            "friendly_name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]"
+          },
+          "last_changed": "2026-10-18T00:14:43.325912-04:00",
+          "last_reported": "2026-10-18T00:14:43.325912-04:00",
+          "last_updated": "2026-10-18T00:14:43.325912-04:00",
+          "context": {
+            "id": "01M56KG53XRK702TNTTG7ZDPGG",
+            "parent_id": null,
+            "user_id": null
+          }
+        },
+        "automation.media_basement_movie_room_no_occupancy_tv_off": {
+          "entity_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+          "state": "on",
+          "attributes": {
+            "id": "1770265925289",
+            "last_triggered": "2026-10-17T23:20:13.140618-04:00",
+            "mode": "restart",
+            "current": 0,
+            "icon": "mdi:television-off",
+            "friendly_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+          },
+          "last_changed": "2026-10-18T00:14:51.065616-04:00",
+          "last_reported": "2026-10-18T00:14:51.065616-04:00",
+          "last_updated": "2026-10-18T00:14:51.065616-04:00",
+          "context": {
+            "id": "01M56KGCNS3TTWSHHA9F4Z0BMG",
+            "parent_id": null,
+            "user_id": null
+          }
+        },
+        "input_boolean.basement_movie_room_tv_auto_off_enabled": {
+          "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled",
+          "state": "off",
+          "attributes": {
+            "editable": true,
+            "icon": "mdi:television-off",
+            "friendly_name": "Basement Movie Room TV Auto-Off Pending (toggle off to cancel)"
+          },
+          "last_changed": "2026-10-17T23:18:57.681157-04:00",
+          "last_reported": "2026-10-17T23:18:57.681157-04:00",
+          "last_updated": "2026-10-17T23:18:57.681157-04:00",
+          "context": {
+            "id": "01M56GA1W10HJ862DM3SM877PA",
+            "parent_id": "01M56GA1W068DE04P7K67RFNR8",
+            "user_id": null
+          }
+        },
+        "light.basement_movie_room_lights": {
+          "entity_id": "light.basement_movie_room_lights",
+          "state": "off",
+          "attributes": {
+            "min_color_temp_kelvin": 2000,
+            "max_color_temp_kelvin": 6535,
+            "effect_list": [
+              "blink",
+              "breathe",
+              "okay",
+              "channel_change",
+              "candle",
+              "fireplace",
+              "colorloop",
+              "sunset",
+              "sunrise",
+              "sparkle",
+              "opal",
+              "glisten",
+              "underwater",
+              "cosmos",
+              "sunbeam",
+              "enchant",
+              "none",
+              "finish_effect",
+              "stop_effect",
+              "stop_hue_effect"
+            ],
+            "supported_color_modes": [
+              "color_temp",
+              "xy"
+            ],
+            "group_entities": [
+              "light.basement_movie_hue_recessed_01",
+              "light.basement_movie_hue_recessed_02",
+              "light.basement_movie_hue_recessed_03",
+              "light.basement_movie_hue_recessed_04",
+              "light.basement_movie_inovelli_presence"
+            ],
+            "effect": null,
+            "color_mode": null,
+            "brightness": null,
+            "color_temp_kelvin": null,
+            "hs_color": null,
+            "rgb_color": null,
+            "xy_color": null,
+            "friendly_name": "basement_movie_room_lights",
+            "supported_features": 44
+          },
+          "last_changed": "2026-10-17T23:25:13.721351-04:00",
+          "last_reported": "2026-10-17T23:25:13.721351-04:00",
+          "last_updated": "2026-10-17T23:25:13.721351-04:00",
+          "context": {
+            "id": "01M56GCBJKHB3QP4G77NCK8AYJ",
+            "parent_id": "01M56GCBJKAP7QN991J0M1YBRB",
+            "user_id": null
+          }
+        },
+        "light.basement_movie_room_ambient_lighting": {
+          "entity_id": "light.basement_movie_room_ambient_lighting",
+          "state": "off",
+          "attributes": {
+            "min_color_temp_kelvin": 2000,
+            "max_color_temp_kelvin": 6535,
+            "effect_list": [
+              "blink",
+              "breathe",
+              "okay",
+              "channel_change",
+              "candle",
+              "fireplace",
+              "colorloop",
+              "sunset",
+              "sunrise",
+              "sparkle",
+              "opal",
+              "glisten",
+              "underwater",
+              "cosmos",
+              "sunbeam",
+              "enchant",
+              "none",
+              "finish_effect",
+              "stop_effect",
+              "stop_hue_effect"
+            ],
+            "supported_color_modes": [
+              "color_temp",
+              "xy"
+            ],
+            "group_entities": [
+              "light.basement_movie_hue_right_floor_lamp",
+              "light.basement_movie_hue_left_floor_lamp",
+              "light.basement_movie_hue_play_01",
+              "light.basement_movie_hue_play_02",
+              "light.basement_movie_hue_gradient_65",
+              "light.basement_movie_hue_gradient_75"
+            ],
+            "effect": null,
+            "color_mode": null,
+            "brightness": null,
+            "color_temp_kelvin": null,
+            "hs_color": null,
+            "rgb_color": null,
+            "xy_color": null,
+            "friendly_name": "basement_movie_room_ambient_lighting",
+            "supported_features": 44
+          },
+          "last_changed": "2026-10-16T21:25:53.336522-04:00",
+          "last_reported": "2026-10-16T21:25:53.336522-04:00",
+          "last_updated": "2026-10-16T21:25:53.336522-04:00",
+          "context": {
+            "id": "01M53QE90NXKZXG4VC5Z72GYW6",
+            "parent_id": "01M53QE90K29MMZP6YVP3A5ANJ",
+            "user_id": null
+          }
+        },
+        "media_player.lg_webos_tv_oled83g4wua": {
+          "entity_id": "media_player.lg_webos_tv_oled83g4wua",
+          "state": "unavailable",
+          "attributes": {
+            "source_list": [
+              "8 Ball Pool",
+              "Amazon Alexa",
+              "Apple OTT",
+              "Apple TV",
+              "Apps",
+              "Camera",
+              "Copilot",
+              "Disney+",
+              "Fubo: Watch Live TV & Sports",
+              "HBO Max",
+              "HDMI 3",
+              "HDMI 4",
+              "Home Hub",
+              "Hulu",
+              "LG Channels",
+              "LG Gallery+",
+              "LG Gaming Portal",
+              "LG Link",
+              "LG Movies & TV",
+              "LG Radio+",
+              "LG Sports Playbook",
+              "LG Streaming Week",
+              "LG Travel+",
+              "Live TV",
+              "Media Player",
+              "Memory Care",
+              "Multi View",
+              "Mysti Stardust",
+              "Netflix",
+              "Peacock",
+              "Pluto TV",
+              "Prime Video",
+              "SHIELD",
+              "STR-AZ5000ES",
+              "ShopTime",
+              "Sling TV",
+              "Sports",
+              "Tubi: Free Movies & TV",
+              "Web Browser",
+              "Weekend Games - Song Quiz, Jeopardy! and CoComelon",
+              "YouTube"
+            ],
+            "device_class": "tv",
+            "friendly_name": "Movie Room LG TV",
+            "supported_features": 24381
+          },
+          "last_changed": "2026-10-17T23:21:58.922282-04:00",
+          "last_reported": "2026-10-17T23:21:58.922282-04:00",
+          "last_updated": "2026-10-17T23:21:58.922282-04:00",
+          "context": {
+            "id": "01M56GFJWAD4W58X5HB0WEM976",
+            "parent_id": null,
+            "user_id": null
+          }
+        },
+        "assist_satellite.movie_room_voice_assist_satellite": {
+          "entity_id": "assist_satellite.movie_room_voice_assist_satellite",
+          "state": "idle",
+          "attributes": {
+            "friendly_name": "Movie Room Voice Assist satellite",
+            "supported_features": 3
+          },
+          "last_changed": "2026-10-16T21:24:55.672754-04:00",
+          "last_reported": "2026-10-16T21:24:55.672754-04:00",
+          "last_updated": "2026-10-16T21:24:55.672754-04:00",
+          "context": {
+            "id": "01M53QCH7RVYNMWT7NSD86PPRN",
+            "parent_id": null,
+            "user_id": null
+          }
+        },
+        "automation.cycle_photo_frame_image": {
+          "entity_id": "automation.cycle_photo_frame_image",
+          "state": "on",
+          "attributes": {
+            "id": "1748028840692",
+            "last_triggered": "2026-10-18T00:15:00.117606-04:00",
+            "mode": "single",
+            "current": 0,
+            "icon": "mdi:camera",
+            "friendly_name": "Cycle Photo Frame Image"
+          },
+          "last_changed": "2026-10-12T12:03:18.238939-04:00",
+          "last_reported": "2026-10-18T00:15:00.130545-04:00",
+          "last_updated": "2026-10-18T00:15:00.130545-04:00",
+          "context": {
+            "id": "01M56KGNGNTC5BAD632P1RNG3J",
+            "parent_id": null,
+            "user_id": null
+          }
+        }
+      }
+    },
+    "metadata": {
+      "home_assistant_timezone": "America/New_York",
+      "timestamp_format": "ISO 8601 (America/New_York)",
+      "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/New_York local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+    }
+  },
+  "writes": [
+    {
+      "automation_id": "automation.light_inovelli_movie_room_motion_cleared_lights_off",
+      "success": true,
+      "result": "ok",
+      "operation": "updated",
+      "category": "01K57ATNFFTNT6X9H75K57VWZ9",
+      "best_practice_warnings": [
+        "Template detected in condition \u2014 if this maps to a native option (`numeric_state`, `state`, `time`, `sun`, `zone`, `device`), use that instead. Templates fail silently at runtime and bypass schema validation. See skill://home-assistant-best-practices/references/template-guidelines.md#when-to-avoid-templates | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/template-guidelines.md')",
+        "Condition uses template with `is_state()` \u2014 use native `state` condition instead (e.g., `condition: state, entity_id: light.bedroom, state: 'on'`). See skill://home-assistant-best-practices/references/automation-patterns.md#native-conditions | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')",
+        "Trigger uses template with `is_state()` \u2014 use native `state` trigger instead (e.g., `platform: state, entity_id: light.x, to: 'on'`). See skill://home-assistant-best-practices/references/automation-patterns.md#trigger-types | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')"
+      ]
+    },
+    {
+      "automation_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+      "success": true,
+      "result": "ok",
+      "operation": "updated",
+      "category": "01KGP18YKXTZN1941J0JEB9SMN",
+      "best_practice_warnings": [
+        "Action uses `wait_template` \u2014 consider `wait_for_trigger` with a state trigger (note: different semantics \u2014 `wait_for_trigger` waits for a *change*, `wait_template` passes immediately if already true). See skill://home-assistant-best-practices/references/automation-patterns.md#wait-actions | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')",
+        "Template detected in condition \u2014 if this maps to a native option (`numeric_state`, `state`, `time`, `sun`, `zone`, `device`), use that instead. Templates fail silently at runtime and bypass schema validation. See skill://home-assistant-best-practices/references/template-guidelines.md#when-to-avoid-templates | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/template-guidelines.md')",
+        "Trigger uses template with `is_state()` \u2014 use native `state` trigger instead (e.g., `platform: state, entity_id: light.x, to: 'on'`). See skill://home-assistant-best-practices/references/automation-patterns.md#trigger-types | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')",
+        "Trigger uses `template` platform \u2014 if this maps to a native option (`state`, `numeric_state`, `time`, `time_pattern`, `sun`, `zone`, `event`), use that instead. Native triggers are event-driven; template triggers re-evaluate on every state change. See skill://home-assistant-best-practices/references/automation-patterns.md#trigger-types | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')"
+      ]
+    }
+  ],
+  "storage_hashes": {
+    "lights": "0609c53da253d693",
+    "tv": "ada6bf58cd093d73"
+  },
+  "validation": "84 serial fake-time configuration-driven tests; installed HA schema OK for both; five isolated real HA Script probes with only fake service handlers passed; loaded raw_config exact match for both",
+  "no_execution_verification": "Both automations on/current=0; last_triggered unchanged; pending off; lights/TV/satellite last_changed unchanged; unrelated photo automation last_changed unchanged",
+  "remaining_gate": "Opening a ready PR starts existing Claude review/audit workflows. No permission received to consume Claude CI. No PR opened, merge performed, or further runtime operations authorized after checkpoint.",
+  "record_type": "Historical deployment/checkpoint snapshot; see publication_resumption for current authorization",
+  "publication_resumption": "Tom explicitly approved ready PR publication, existing Claude GitHub CI reviews/audits, required checks and merge. Former CI permission gate resolved; same session only, no local Claude/agents and no further deployment. Compare merged source to live read-only."
+}

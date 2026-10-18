@@ -1,0 +1,29 @@
+{
+  "success": true,
+  "entry_id": "01KE8EJY0N5M0YKHPY6SQ0CE2R",
+  "entry": {
+    "created_at": 1767662778.38965,
+    "entry_id": "01KE8EJY0N5M0YKHPY6SQ0CE2R",
+    "domain": "homekit_controller",
+    "modified_at": 1792293136.913603,
+    "title": "Presence-Sensor-FP2-A4B2",
+    "source": "zeroconf",
+    "state": "loaded",
+    "supports_options": false,
+    "supports_remove_device": true,
+    "supports_unload": true,
+    "supports_reconfigure": false,
+    "supported_subentry_types": {},
+    "pref_disable_new_entities": false,
+    "pref_disable_polling": false,
+    "disabled_by": null,
+    "reason": null,
+    "error_reason_translation_domain": null,
+    "error_reason_translation_key": null,
+    "error_reason_translation_placeholders": null,
+    "num_subentries": 0,
+    "options": {}
+  },
+  "log_level": "INFO",
+  "log_level_raw": 20
+}

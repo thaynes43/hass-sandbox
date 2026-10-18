@@ -1,0 +1,870 @@
+{
+  "success": true,
+  "query": "light.basement_movie_room_lights",
+  "entities": [],
+  "entity_total_matches": 0,
+  "automations": [
+    {
+      "entity_id": "automation.basement_movie_room_zen37_scene_controller",
+      "friendly_name": "[Switch] [Zen37] : [Basement] [Movie Room] : [Press or Hold] : [Scene Mapping]",
+      "score": 100,
+      "match_in_name": false,
+      "match_in_config": true,
+      "match_in_references": true,
+      "config": {
+        "id": "1737692123436",
+        "alias": "Basement Movie Room ZEN37 Scene Controller",
+        "description": "",
+        "use_blueprint": {
+          "path": "rwalker777/Zen37-ZwaveJS-blueprint.yaml",
+          "input": {
+            "zen37lr": [
+              "ac1f3efde8378e2773d9c677b59494ea"
+            ],
+            "button_1_1_tap": [
+              {
+                "action": "light.toggle",
+                "metadata": {},
+                "data": {},
+                "target": {
+                  "entity_id": "light.basement_movie_room_lights"
+                }
+              }
+            ],
+            "button_1_2_tap": [
+              {
+                "action": "light.turn_on",
+                "metadata": {},
+                "data": {
+                  "color_temp_kelvin": 2750,
+                  "brightness_pct": 100
+                },
+                "target": {
+                  "entity_id": "light.basement_movie_room_lights"
+                }
+              }
+            ],
+            "button_1_3_tap": [
+              {
+                "action": "light.toggle",
+                "metadata": {},
+                "data": {},
+                "target": {
+                  "entity_id": "light.basement_rumpus_room_lights"
+                }
+              }
+            ],
+            "button_1_hold": [
+              {
+                "target": {
+                  "entity_id": "input_boolean.movie_room_zen37_button_1_held"
+                },
+                "action": "input_boolean.turn_on",
+                "data": {}
+              }
+            ],
+            "button_1_released": [
+              {
+                "target": {
+                  "entity_id": "input_boolean.movie_room_zen37_button_1_held"
+                },
+                "action": "input_boolean.turn_off",
+                "data": {}
+              }
+            ],
+            "button_2_1_tap": [
+              {
+                "data": {
+                  "lights_to_control": "light.basement_movie_room_lights",
+                  "brightness": "{{ state_attr('light.basement_movie_room_lights', 'brightness') | default(255) }}"
+                },
+                "action": "script.toggle_hue_colors"
+              }
+            ],
+            "button_2_2_tap": [
+              {
+                "action": "light.turn_on",
+                "metadata": {},
+                "data": {
+                  "rgb_color": [
+                    255,
+                    0,
+                    0
+                  ],
+                  "brightness_pct": 15
+                },
+                "target": {
+                  "entity_id": "light.basement_movie_room_lights"
+                }
+              }
+            ],
+            "button_2_3_tap": [
+              {
+                "action": "light.toggle",
+                "metadata": {},
+                "data": {},
+                "target": {
+                  "entity_id": "light.basement_concessions_lights, light.basement_hall_lights"
+                }
+              }
+            ],
+            "button_2_hold": [
+              {
+                "target": {
+                  "entity_id": "input_boolean.movie_room_zen37_button_2_held"
+                },
+                "action": "input_boolean.turn_on",
+                "data": {}
+              }
+            ],
+            "button_2_released": [
+              {
+                "target": {
+                  "entity_id": "input_boolean.movie_room_zen37_button_2_held"
+                },
+                "action": "input_boolean.turn_off",
+                "data": {}
+              }
+            ],
+            "button_3_1_tap": [
+              {
+                "action": "light.toggle",
+                "metadata": {},
+                "data": {},
+                "target": {
+                  "entity_id": "light.basement_movie_room_ambient_lighting"
+                }
+              }
+            ],
+            "button_3_2_tap": [
+              {
+                "alias": "Step the Movie Room mini split target 1 degree down, not below its min_temp (the range changes with the mode); only heat and cool have a single set point on the Cielo",
+                "if": [
+                  {
+                    "condition": "state",
+                    "entity_id": "climate.movie_room_breeze",
+                    "state": [
+                      "heat",
+                      "cool"
+                    ]
+                  }
+                ],
+                "then": [
+                  {
+                    "action": "climate.set_temperature",
+                    "target": {
+                      "entity_id": "climate.movie_room_breeze"
+                    },
+                    "data": {
+                      "temperature": "{{ [(state_attr('climate.movie_room_breeze', 'temperature') | float(72)) - 1, state_attr('climate.movie_room_breeze', 'min_temp') | float(60)] | max }}"
+                    }
+                  }
+                ]
+              }
+            ],
+            "button_3_hold": [
+              {
+                "target": {
+                  "entity_id": "input_boolean.movie_room_zen37_button_3_held"
+                },
+                "action": "input_boolean.turn_on",
+                "data": {}
+              }
+            ],
+            "button_3_released": [
+              {
+                "target": {
+                  "entity_id": "input_boolean.movie_room_zen37_button_3_held"
+                },
+                "action": "input_boolean.turn_off",
+                "data": {}
+              }
+            ],
+            "button_4_1_tap": [
+              {
+                "data": {
+                  "select_entities": "select.basement_movie_hue_gradient_65_gradient_scene, select.basement_movie_hue_gradient_75_gradient_scene, select.basement_movie_hue_left_floor_lamp_gradient_scene, select.basement_movie_hue_right_floor_lamp_gradient_scene",
+                  "light_entities": "light.basement_movie_hue_play_01, light.basement_movie_hue_play_02"
+                },
+                "action": "script.cycle_gradient_scene_using_same_light_color"
+              }
+            ],
+            "button_4_2_tap": [
+              {
+                "alias": "Step the Movie Room mini split target 1 degree up, not above its max_temp (the range changes with the mode); only heat and cool have a single set point on the Cielo",
+                "if": [
+                  {
+                    "condition": "state",
+                    "entity_id": "climate.movie_room_breeze",
+                    "state": [
+                      "heat",
+                      "cool"
+                    ]
+                  }
+                ],
+                "then": [
+                  {
+                    "action": "climate.set_temperature",
+                    "target": {
+                      "entity_id": "climate.movie_room_breeze"
+                    },
+                    "data": {
+                      "temperature": "{{ [(state_attr('climate.movie_room_breeze', 'temperature') | float(72)) + 1, state_attr('climate.movie_room_breeze', 'max_temp') | float(86)] | min }}"
+                    }
+                  }
+                ]
+              }
+            ],
+            "button_4_hold": [
+              {
+                "target": {
+                  "entity_id": "input_boolean.movie_room_zen37_button_4_held"
+                },
+                "action": "input_boolean.turn_on",
+                "data": {}
+              }
+            ],
+            "button_4_released": [
+              {
+                "target": {
+                  "entity_id": "input_boolean.movie_room_zen37_button_4_held"
+                },
+                "action": "input_boolean.turn_off",
+                "data": {}
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "entity_id": "automation.gradual_brightness_increase_on_boolean",
+      "friendly_name": "[Helper] [Zen37] : [Basement] [Movie Room] : [Button Hold] : [Brighten Recessed Lights]",
+      "score": 100,
+      "match_in_name": false,
+      "match_in_config": true,
+      "match_in_references": false,
+      "config": {
+        "id": "1737736034096",
+        "alias": "Gradual Brightness Increase on Boolean",
+        "description": "",
+        "triggers": [
+          {
+            "trigger": "state",
+            "entity_id": [
+              "input_boolean.movie_room_zen37_button_1_held"
+            ],
+            "to": "on"
+          }
+        ],
+        "actions": [
+          {
+            "repeat": {
+              "while": [
+                {
+                  "condition": "state",
+                  "entity_id": "input_boolean.movie_room_zen37_button_1_held",
+                  "state": "on"
+                }
+              ],
+              "sequence": [
+                {
+                  "data": {
+                    "lights_to_control": "light.basement_movie_room_lights"
+                  },
+                  "action": "script.gradual_brightness_increase"
+                },
+                {
+                  "delay": "00:00:00.2"
+                }
+              ]
+            }
+          }
+        ],
+        "mode": "single"
+      }
+    },
+    {
+      "entity_id": "automation.gradual_brightness_decrease_on_boolean",
+      "friendly_name": "[Helper] [Zen37] : [Basement] [Movie Room] : [Button Hold] : [Dim Recessed Lights]",
+      "score": 100,
+      "match_in_name": false,
+      "match_in_config": true,
+      "match_in_references": false,
+      "config": {
+        "id": "1737736075527",
+        "alias": "Gradual Brightness Decrease on Boolean",
+        "description": "",
+        "triggers": [
+          {
+            "trigger": "state",
+            "entity_id": [
+              "input_boolean.movie_room_zen37_button_2_held"
+            ],
+            "to": "on"
+          }
+        ],
+        "actions": [
+          {
+            "repeat": {
+              "while": [
+                {
+                  "condition": "state",
+                  "entity_id": "input_boolean.movie_room_zen37_button_2_held",
+                  "state": "on"
+                }
+              ],
+              "sequence": [
+                {
+                  "data": {
+                    "lights_to_control": "light.basement_movie_room_lights"
+                  },
+                  "action": "script.gradual_brightness_decrease"
+                },
+                {
+                  "delay": "00:00:00.2"
+                }
+              ]
+            }
+          }
+        ],
+        "mode": "single"
+      }
+    },
+    {
+      "entity_id": "automation.basement_movie_room_inovelli_blue_switch_behavior",
+      "friendly_name": "[Switch] [Inovelli Blue] : [Basement] [Movie Room] : [Press or Hold] : [Switch Mappings]",
+      "score": 100,
+      "match_in_name": false,
+      "match_in_config": true,
+      "match_in_references": true,
+      "config": {
+        "id": "1738531060640",
+        "alias": "[Switch] [Inovelli Blue] : [Basement] [Movie Room] : [Press or Hold] : [Switch Mappings]",
+        "description": "",
+        "use_blueprint": {
+          "path": "starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml",
+          "input": {
+            "switch": "238851523f18e55c74ca8994808d3cd9",
+            "config_single": [
+              {
+                "action": "light.toggle",
+                "metadata": {},
+                "data": {},
+                "target": {
+                  "entity_id": "light.basement_movie_room_ambient_lighting"
+                }
+              }
+            ],
+            "config_double": [
+              {
+                "action": "script.inovelli_toggle_mmwave_hold_led_indicator",
+                "data": {
+                  "switch_name": "basement_movie_inovelli_presence",
+                  "normal_mode_input_select": "input_select.basement_movie_room_mmwave_normal_mode",
+                  "hold_color": "input_text.inovelli_manual_hold",
+                  "prev_led_color_helper": "input_text.basement_movie_led_color",
+                  "automation_entity_ids": [
+                    "automation.light_inovelli_movie_room_motion_cleared_lights_off"
+                  ]
+                }
+              }
+            ],
+            "up_double": [
+              {
+                "action": "light.turn_on",
+                "metadata": {},
+                "data": {
+                  "color_temp_kelvin": 2750,
+                  "brightness_pct": 100
+                },
+                "target": {
+                  "entity_id": "light.basement_movie_room_lights"
+                }
+              }
+            ],
+            "down_double": [
+              {
+                "action": "light.turn_on",
+                "metadata": {},
+                "data": {
+                  "color_temp_kelvin": 2750,
+                  "brightness_pct": 33
+                },
+                "target": {
+                  "entity_id": "light.basement_movie_room_lights"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "entity_id": "automation.light_inovelli_movie_room_motion_cleared_lights_off",
+      "friendly_name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]",
+      "score": 100,
+      "match_in_name": false,
+      "match_in_config": true,
+      "match_in_references": true,
+      "config": {
+        "id": "1769402249599",
+        "alias": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]",
+        "description": "Movie room is OFF-only: we don't auto-turn on lights here; we only ensure lights turn off after the room is empty.\n",
+        "triggers": [
+          {
+            "trigger": "template",
+            "value_template": "{{\n  is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off')\n  and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off')\n}}\n"
+          }
+        ],
+        "conditions": [],
+        "actions": [
+          {
+            "condition": "template",
+            "value_template": "{# Only run when hold is clear #}\n{% set s = 'basement_movie_inovelli_presence' %}\n{% set manual = states('input_text.inovelli_manual_hold') | int(85) %}\n{% set auto = states('input_text.inovelli_auto_hold') | int(0) %}\n{% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}\n{{ led1 != manual and led1 != auto }}\n"
+          },
+          {
+            "delay": "{% set raw = states('input_select.basement_movie_room_occupancy_off_delay') %} {% set d = raw | replace('\"','') | replace(\"'\",\"\") | trim %} {{ d if d not in ['unknown','unavailable',''] else '00:05:00' }}"
+          },
+          {
+            "condition": "template",
+            "value_template": "{{\n  is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off')\n  and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off')\n}}\n"
+          },
+          {
+            "condition": "template",
+            "value_template": "{# Re-check hold state after the delay #}\n{% set s = 'basement_movie_inovelli_presence' %}\n{% set manual = states('input_text.inovelli_manual_hold') | int(85) %}\n{% set auto = states('input_text.inovelli_auto_hold') | int(0) %}\n{% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}\n{{ led1 != manual and led1 != auto }}\n"
+          },
+          {
+            "action": "light.turn_off",
+            "target": {
+              "entity_id": [
+                "light.basement_movie_room_lights",
+                "light.basement_movie_room_ambient_lighting"
+              ]
+            }
+          }
+        ],
+        "mode": "restart"
+      }
+    }
+  ],
+  "scripts": [
+    {
+      "entity_id": "script.brighten_all_lights",
+      "script_id": "brighten_all_lights",
+      "friendly_name": "Brighten All Lights",
+      "score": 100,
+      "match_in_name": false,
+      "match_in_config": true,
+      "match_in_references": false,
+      "config": {
+        "alias": "Brighten All Lights",
+        "description": "Saves state + brightens all configured lights to 100% and target Kelvin (default 2750K), with a 2 second delay between each to avoid overwhelming the network.\n",
+        "fields": {
+          "kelvin": {
+            "name": "Target Kelvin",
+            "description": "Color temperature to set (Kelvin). Defaults to 2750K.",
+            "required": false,
+            "default": 2750,
+            "selector": {
+              "number": {
+                "min": 1500,
+                "max": 9000,
+                "step": 50,
+                "mode": "slider"
+              }
+            }
+          },
+          "snapshot_prefix": {
+            "name": "Snapshot Prefix",
+            "description": "Prefix used for snapshot scene_id. Defaults to \"light_state_snapshot\".",
+            "required": false,
+            "default": "light_state_snapshot",
+            "selector": {
+              "text": {}
+            }
+          }
+        },
+        "sequence": [
+          {
+            "variables": {
+              "target_kelvin": "{{ kelvin | default(2750) | int }}",
+              "prefix": "{{ snapshot_prefix | default('light_state_snapshot') }}",
+              "lights": [
+                "light.upstairs_foyer_lights",
+                "light.upstairs_primary_hall_lights",
+                "light.upstairs_primary_bath_lights",
+                "light.upstairs_primary_bed_lights",
+                "light.upstairs_primary_nook_lights",
+                "light.upstairs_primary_cloffice_lights",
+                "light.downstairs_entrance_lights",
+                "light.downstairs_mudroom_lights",
+                "light.downstairs_kitchen_lights",
+                "light.downstairs_livingroom_lights",
+                "light.basement_concessions_lights",
+                "light.basement_hall_lights",
+                "light.basement_movie_room_lights",
+                "light.basement_rumpus_room_lights"
+              ]
+            }
+          },
+          {
+            "repeat": {
+              "for_each": "{{ lights }}",
+              "sequence": [
+                {
+                  "action": "script.save_original_state_and_brighten_single_light",
+                  "data": {
+                    "entity_id": "{{ repeat.item }}",
+                    "kelvin": "{{ target_kelvin }}",
+                    "snapshot_prefix": "{{ prefix }}"
+                  }
+                },
+                {
+                  "delay": {
+                    "seconds": 2
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "mode": "single"
+      }
+    },
+    {
+      "entity_id": "script.restore_all_lights",
+      "script_id": "restore_all_lights",
+      "friendly_name": "Restore All Lights",
+      "score": 100,
+      "match_in_name": false,
+      "match_in_config": true,
+      "match_in_references": false,
+      "config": {
+        "alias": "Restore All Lights",
+        "description": "Restores all configured lights from their saved snapshots, with a 2 second delay between each to avoid overwhelming the network.\n",
+        "fields": {
+          "snapshot_prefix": {
+            "name": "Snapshot Prefix",
+            "description": "Prefix used for snapshot scene_id. Defaults to \"light_state_snapshot\".",
+            "required": false,
+            "default": "light_state_snapshot",
+            "selector": {
+              "text": {}
+            }
+          }
+        },
+        "sequence": [
+          {
+            "variables": {
+              "prefix": "{{ snapshot_prefix | default('light_state_snapshot') }}",
+              "lights": [
+                "light.upstairs_foyer_lights",
+                "light.upstairs_primary_hall_lights",
+                "light.upstairs_primary_bath_lights",
+                "light.upstairs_primary_bed_lights",
+                "light.upstairs_primary_nook_lights",
+                "light.upstairs_primary_cloffice_lights",
+                "light.downstairs_entrance_lights",
+                "light.downstairs_mudroom_lights",
+                "light.downstairs_kitchen_lights",
+                "light.downstairs_livingroom_lights",
+                "light.basement_concessions_lights",
+                "light.basement_hall_lights",
+                "light.basement_movie_room_lights",
+                "light.basement_rumpus_room_lights"
+              ]
+            }
+          },
+          {
+            "repeat": {
+              "for_each": "{{ lights }}",
+              "sequence": [
+                {
+                  "action": "script.restore_light_state_single_light",
+                  "data": {
+                    "entity_id": "{{ repeat.item }}",
+                    "snapshot_prefix": "{{ prefix }}"
+                  }
+                },
+                {
+                  "delay": {
+                    "seconds": 2
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "mode": "single"
+      }
+    },
+    {
+      "entity_id": "script.set_light_parameters_many_lights",
+      "script_id": "set_light_parameters_many_lights",
+      "friendly_name": "Set Light Parameters (many lights)",
+      "score": 100,
+      "match_in_name": false,
+      "match_in_config": true,
+      "match_in_references": false,
+      "config": {
+        "alias": "Set Light Parameters (many lights)",
+        "description": "Applies brightness_pct and optional color_temp_kelvin / xy_color across a fixed set of lights. If neither temp nor color is provided, defaults to 2750K. Hue-ramp-safe: will temporarily turn on lights that are OFF to apply parameters, then return them to OFF.\n",
+        "fields": {
+          "brightness_pct": {
+            "name": "Brightness (%)",
+            "required": true,
+            "selector": {
+              "number": {
+                "min": 1,
+                "max": 100,
+                "step": 1,
+                "mode": "slider"
+              }
+            }
+          },
+          "color_temp_kelvin": {
+            "name": "Color Temp (Kelvin)",
+            "required": false,
+            "selector": {
+              "number": {
+                "min": 1500,
+                "max": 9000,
+                "step": 50,
+                "mode": "slider"
+              }
+            }
+          },
+          "xy_color": {
+            "name": "XY Color",
+            "description": "Optional list like [0.519, 0.387]",
+            "required": false,
+            "selector": {
+              "object": {}
+            }
+          },
+          "ramp_seconds": {
+            "name": "Ramp Delay Seconds",
+            "description": "Delay to allow Hue ramps to settle (default 2.8s)",
+            "required": false,
+            "default": 2.8,
+            "selector": {
+              "number": {
+                "min": 0,
+                "max": 10,
+                "step": 0.1,
+                "mode": "slider"
+              }
+            }
+          },
+          "delay_seconds": {
+            "name": "Delay Between Lights",
+            "description": "Extra delay between each light call (default 2s)",
+            "required": false,
+            "default": 2,
+            "selector": {
+              "number": {
+                "min": 0,
+                "max": 10,
+                "step": 1,
+                "mode": "slider"
+              }
+            }
+          }
+        },
+        "sequence": [
+          {
+            "variables": {
+              "ramp": "{{ ramp_seconds | default(2.8) | float }}",
+              "extra_delay": "{{ delay_seconds | default(2) | int }}",
+              "lights": [
+                "light.upstairs_foyer_lights",
+                "light.upstairs_primary_hall_lights",
+                "light.upstairs_primary_bath_lights",
+                "light.upstairs_primary_bed_lights",
+                "light.upstairs_primary_nook_lights",
+                "light.upstairs_primary_cloffice_lights",
+                "light.downstairs_entrance_lights",
+                "light.downstairs_mudroom_lights",
+                "light.downstairs_kitchen_lights",
+                "light.downstairs_livingroom_lights",
+                "light.basement_concessions_lights",
+                "light.basement_hall_lights",
+                "light.basement_movie_room_lights",
+                "light.basement_rumpus_room_lights"
+              ]
+            }
+          },
+          {
+            "repeat": {
+              "for_each": "{{ lights }}",
+              "sequence": [
+                {
+                  "action": "script.set_light_parameters_single_light",
+                  "data": {
+                    "entity_id": "{{ repeat.item }}",
+                    "brightness_pct": "{{ brightness_pct }}",
+                    "color_temp_kelvin": "{{ color_temp_kelvin if color_temp_kelvin is not none else none }}",
+                    "xy_color": "{{ xy_color if xy_color is not none else none }}",
+                    "ramp_seconds": "{{ ramp }}"
+                  }
+                },
+                {
+                  "choose": [
+                    {
+                      "conditions": [
+                        {
+                          "condition": "template",
+                          "value_template": "{{ extra_delay > 0 }}"
+                        }
+                      ],
+                      "sequence": [
+                        {
+                          "delay": {
+                            "seconds": "{{ extra_delay }}"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "mode": "single",
+        "icon": "mdi:lightbulb-multiple"
+      }
+    },
+    {
+      "entity_id": "script.voice_movie_room_bright",
+      "script_id": "voice_movie_room_bright",
+      "friendly_name": "Movie Room Bright",
+      "score": 100,
+      "match_in_name": false,
+      "match_in_config": true,
+      "match_in_references": true,
+      "config": {
+        "alias": "Movie Room Bright",
+        "description": "Voice tool. Sets the Movie Room recessed lights to full brightness warm white (2750 K, 100%). Same as double-tapping button 1 on the Movie Room scene controller. Use for requests like 'lights up', 'full brightness' or 'bright mode' in the movie room. Does not change the ambient lights.",
+        "icon": "mdi:brightness-7",
+        "mode": "single",
+        "sequence": [
+          {
+            "action": "light.turn_on",
+            "target": {
+              "entity_id": "light.basement_movie_room_lights"
+            },
+            "data": {
+              "color_temp_kelvin": 2750,
+              "brightness_pct": 100
+            }
+          }
+        ]
+      }
+    },
+    {
+      "entity_id": "script.voice_movie_room_dim",
+      "script_id": "voice_movie_room_dim",
+      "friendly_name": "Movie Room Dim",
+      "score": 100,
+      "match_in_name": false,
+      "match_in_config": true,
+      "match_in_references": true,
+      "config": {
+        "alias": "Movie Room Dim",
+        "description": "Voice tool. Dims the Movie Room recessed lights to 33% warm white (2750 K). Same as double-tapping the bottom paddle of the Movie Room wall switch. Use for 'dim the lights', 'movie lighting' or 'lights down' in the movie room. Does not change the ambient lights.",
+        "icon": "mdi:brightness-4",
+        "mode": "single",
+        "sequence": [
+          {
+            "action": "light.turn_on",
+            "target": {
+              "entity_id": "light.basement_movie_room_lights"
+            },
+            "data": {
+              "color_temp_kelvin": 2750,
+              "brightness_pct": 33
+            }
+          }
+        ]
+      }
+    },
+    {
+      "entity_id": "script.voice_movie_room_red_night_mode",
+      "script_id": "voice_movie_room_red_night_mode",
+      "friendly_name": "Movie Room Red Night Mode",
+      "score": 100,
+      "match_in_name": false,
+      "match_in_config": true,
+      "match_in_references": true,
+      "config": {
+        "alias": "Movie Room Red Night Mode",
+        "description": "Voice tool. Sets the Movie Room recessed lights to dim red (15%). Same as double-tapping button 2 on the Movie Room scene controller. Use for 'red mode', 'red lights' or 'night mode' in the movie room.",
+        "icon": "mdi:weather-night",
+        "mode": "single",
+        "sequence": [
+          {
+            "action": "light.turn_on",
+            "target": {
+              "entity_id": "light.basement_movie_room_lights"
+            },
+            "data": {
+              "rgb_color": [
+                255,
+                0,
+                0
+              ],
+              "brightness_pct": 15
+            }
+          }
+        ]
+      }
+    },
+    {
+      "entity_id": "script.voice_movie_room_color_toggle",
+      "script_id": "voice_movie_room_color_toggle",
+      "friendly_name": "Movie Room Color Toggle",
+      "score": 100,
+      "match_in_name": false,
+      "match_in_config": true,
+      "match_in_references": false,
+      "config": {
+        "alias": "Movie Room Color Toggle",
+        "description": "Voice tool. Steps the Movie Room recessed lights to the next colour round the colour wheel (hue +20 degrees each time, same saturation) at their current brightness. Same as pressing button 2 on the Movie Room scene controller. Use for 'change the light colour', 'next colour' or 'toggle colours' for the recessed lights in the movie room. For the ambient lights use Movie Room Ambient Scene instead.",
+        "icon": "mdi:palette-swatch",
+        "mode": "single",
+        "sequence": [
+          {
+            "action": "script.toggle_hue_colors",
+            "data": {
+              "lights_to_control": "light.basement_movie_room_lights",
+              "brightness": "{{ state_attr('light.basement_movie_room_lights', 'brightness') | int(255) }}"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "scenes": [],
+  "helpers": [],
+  "search_types": [
+    "automation",
+    "script",
+    "scene"
+  ],
+  "config_total_matches": 12,
+  "partial": true,
+  "errors": [],
+  "warnings": [
+    "incomplete results: 2 script(s) not scanned (per-id config endpoint returned 404 — these are likely YAML-defined scripts that the /config/script/config REST endpoint does not expose) — their match status is unknown; this result is not exhaustive. Their definitions live outside HA storage (typically scripts.yaml); check there if the match matters. ; Scope of that unknown: Home Assistant's reference graph was consulted, so every plain (non-templated) reference from an automation, script or scene among the surfaces this call searched is counted in total_matches, including from configs that were never read, except any record an entity-visibility filter conceals from you. What an unread config can still hide is a TEMPLATED reference such as {{ states('...') }}, which the graph cannot see, and a reference from a helper body or dashboard card, which are not graph item types."
+  ],
+  "config_has_more": false,
+  "config_next_offset": null,
+  "offset": 0,
+  "limit": 100,
+  "count": 12,
+  "partial_reason": "2 script(s) not scanned (per-id config endpoint returned 404 — these are likely YAML-defined scripts that the /config/script/config REST endpoint does not expose) — their match status is unknown; this result is not exhaustive. Their definitions live outside HA storage (typically scripts.yaml); check there if the match matters. ; Scope of that unknown: Home Assistant's reference graph was consulted, so every plain (non-templated) reference from an automation, script or scene among the surfaces this call searched is counted in total_matches, including from configs that were never read, except any record an entity-visibility filter conceals from you. What an unread config can still hide is a TEMPLATED reference such as {{ states('...') }}, which the graph cannot see, and a reference from a helper body or dashboard card, which are not graph item types.",
+  "has_more": false,
+  "next_offset": null
+}

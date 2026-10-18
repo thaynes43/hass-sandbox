@@ -81,8 +81,14 @@ ambient lights to blood moon" → `blood moon`, "Go back to the previous scene" 
 `voice_movie_room_color_toggle`'s description was also corrected: `script.toggle_hue_colors` steps
 the hue +20° at the same saturation; it never toggled colour/white.
 
-Media: TV auto-off `automation.media_basement_movie_room_no_occupancy_tv_off` (20 min, spoken
-warnings on the satellite). No HA automation turns the TV/AVR on, but the AVR (Sony STR-AZ5000ES,
+Media: coordinated TV and lights auto-off `automation.media_basement_movie_room_no_occupancy_tv_off`:
+both occupancy sensors must report empty; the current TV delay helper (20 min) preserves its old
+15-minute silent absence period, then satellite warnings give 15, 10, 5 and 1 minutes remaining.
+Shutdown follows at least 15 minutes after the first warning (nominal 30 minutes total, plus speech).
+Either sensor reporting occupancy or an invalid state, TV off/unavailable/unknown, or cancelling the
+pending toggle aborts the run. Light holds still protect lights without changing TV auto-off policy.
+The separate lights automation runs only after confirmed TV off, with a fresh five-minute empty-room
+delay; unknown/unavailable TV state alone cannot start it. No HA automation turns the TV/AVR on, but the AVR (Sony STR-AZ5000ES,
 "Works with Sonos") **wakes itself** when the Sonos Port `media_player.movie_room` plays: power on
 after ~2 s, volume tracks the Port, input switches to `Sonos` (AVR recorder history, 2026-09-19
 17:08) — so music sent to this room is audible even with everything "off". Four AVR registrations:

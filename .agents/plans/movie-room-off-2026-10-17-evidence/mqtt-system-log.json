@@ -1,0 +1,28 @@
+{
+  "success": true,
+  "source": "system",
+  "entries": [
+    {
+      "name": "gecko_iot_client.transporters.mqtt.client",
+      "message": [
+        "Connection failed"
+      ],
+      "level": "ERROR",
+      "source": [
+        "/usr/local/lib/python3.14/site-packages/gecko_iot_client/transporters/mqtt/client.py",
+        308
+      ],
+      "timestamp": 1792242682.690545,
+      "exception": "",
+      "count": 2,
+      "first_occurred": 1792242681.8383708
+    }
+  ],
+  "total_entries": 1,
+  "returned_entries": 1,
+  "limit": 50,
+  "order": "newest",
+  "filters_applied": {
+    "search": "mqtt"
+  }
+}

@@ -1,0 +1,374 @@
+{
+  "data": {
+    "success": true,
+    "source": "logbook",
+    "entries": [
+      {
+        "state": "off",
+        "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+        "name": "basement_movie_inovelli_presence Occupancy",
+        "when": "2026-10-17T22:28:56.590808-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "binary_sensor.basement_movie_inovelli_presence_area1occupancy",
+        "name": "basement_movie_inovelli_presence Occupancy",
+        "when": "2026-10-17T22:28:57.151475-04:00"
+      },
+      {
+        "state": "on",
+        "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+        "name": "basement_movie_inovelli_presence Occupancy",
+        "when": "2026-10-17T23:04:36.808218-04:00"
+      },
+      {
+        "state": "on",
+        "entity_id": "binary_sensor.basement_movie_inovelli_presence_area1occupancy",
+        "name": "basement_movie_inovelli_presence Occupancy",
+        "when": "2026-10-17T23:04:37.262763-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+        "name": "basement_movie_inovelli_presence Occupancy",
+        "when": "2026-10-17T23:06:37.568453-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "binary_sensor.basement_movie_inovelli_presence_area1occupancy",
+        "name": "basement_movie_inovelli_presence Occupancy",
+        "when": "2026-10-17T23:06:37.646210-04:00"
+      },
+      {
+        "name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]",
+        "message": "triggered by binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+        "source": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+        "entity_id": "automation.light_inovelli_movie_room_motion_cleared_lights_off",
+        "context_id": "01M56G0MJXDCWMR1HW24GK9V3F",
+        "domain": "automation",
+        "when": "2026-10-17T23:13:49.149704-04:00",
+        "context_state": "off",
+        "context_entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+        "context_entity_id_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+      },
+      {
+        "name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]",
+        "message": "triggered by binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+        "source": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+        "entity_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+        "context_id": "01M56G0MJYW9DXGT4CD7J7PKEG",
+        "domain": "automation",
+        "when": "2026-10-17T23:13:49.150276-04:00",
+        "context_state": "off",
+        "context_entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+        "context_entity_id_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+      },
+      {
+        "state": "on",
+        "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled",
+        "name": "Basement Movie Room TV Auto-Off Pending (toggle off to cancel)",
+        "icon": "mdi:television-off",
+        "when": "2026-10-17T23:13:49.150681-04:00",
+        "context_event_type": "automation_triggered",
+        "context_domain": "automation",
+        "context_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]",
+        "context_message": "triggered by binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+        "context_source": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+        "context_entity_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+        "context_entity_id_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+      },
+      {
+        "state": "off",
+        "entity_id": "light.basement_movie_hue_recessed_04",
+        "name": "basement_movie_hue_recessed_04",
+        "when": "2026-10-17T23:18:49.447750-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "light.basement_movie_inovelli_presence",
+        "name": "basement_movie_inovelli_presence",
+        "when": "2026-10-17T23:18:49.486745-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "light.basement_movie_hue_recessed_01",
+        "name": "basement_movie_hue_recessed_01",
+        "when": "2026-10-17T23:18:49.703453-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "light.basement_movie_room_lights",
+        "name": "basement_movie_room_lights",
+        "when": "2026-10-17T23:18:49.717106-04:00",
+        "context_event_type": "automation_triggered",
+        "context_domain": "automation",
+        "context_name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]",
+        "context_message": "triggered by binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+        "context_source": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+        "context_entity_id": "automation.light_inovelli_movie_room_motion_cleared_lights_off",
+        "context_entity_id_name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]"
+      },
+      {
+        "state": "off",
+        "entity_id": "light.basement_movie_hue_recessed_02",
+        "name": "basement_movie_hue_recessed_02",
+        "when": "2026-10-17T23:18:49.724497-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "light.basement_movie_hue_recessed_03",
+        "name": "basement_movie_hue_recessed_03",
+        "when": "2026-10-17T23:18:49.729254-04:00"
+      },
+      {
+        "name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]",
+        "message": "triggered by binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+        "source": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+        "entity_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+        "context_id": "01M56GA1W10HJ862DM3SM877PA",
+        "domain": "automation",
+        "when": "2026-10-17T23:18:57.675727-04:00",
+        "context_state": "on",
+        "context_entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+        "context_entity_id_name": "Aqara FP2 Presence Sensor 01 Presence-Sensor-FP2-A4B2 Presence Sensor 1"
+      },
+      {
+        "state": "off",
+        "entity_id": "input_boolean.basement_movie_room_tv_auto_off_enabled",
+        "name": "Basement Movie Room TV Auto-Off Pending (toggle off to cancel)",
+        "icon": "mdi:television-off",
+        "when": "2026-10-17T23:18:57.681157-04:00",
+        "context_event_type": "automation_triggered",
+        "context_domain": "automation",
+        "context_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]",
+        "context_message": "triggered by binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+        "context_source": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor via template",
+        "context_entity_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+        "context_entity_id_name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]"
+      },
+      {
+        "state": "on",
+        "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+        "name": "basement_movie_inovelli_presence Occupancy",
+        "when": "2026-10-17T23:18:58.287358-04:00"
+      },
+      {
+        "state": "on",
+        "entity_id": "binary_sensor.basement_movie_inovelli_presence_area1occupancy",
+        "name": "basement_movie_inovelli_presence Occupancy",
+        "when": "2026-10-17T23:18:58.754889-04:00"
+      },
+      {
+        "name": "[Switch] [Inovelli Blue] : [Basement] [Movie Room] : [Press or Hold] : [Switch Mappings]",
+        "message": "triggered by mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action",
+        "source": "mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action",
+        "entity_id": "automation.basement_movie_room_inovelli_blue_switch_behavior",
+        "context_id": "01M56GA5QBDGWB5JS5H79E7ZFQ",
+        "domain": "automation",
+        "when": "2026-10-17T23:19:01.611643-04:00"
+      },
+      {
+        "state": "on",
+        "entity_id": "light.basement_movie_room_lights",
+        "name": "basement_movie_room_lights",
+        "when": "2026-10-17T23:19:01.676512-04:00"
+      },
+      {
+        "state": "on",
+        "entity_id": "light.basement_movie_inovelli_presence",
+        "name": "basement_movie_inovelli_presence",
+        "when": "2026-10-17T23:19:01.699679-04:00"
+      },
+      {
+        "state": "on",
+        "entity_id": "light.basement_movie_hue_recessed_02",
+        "name": "basement_movie_hue_recessed_02",
+        "when": "2026-10-17T23:19:01.919507-04:00"
+      },
+      {
+        "state": "on",
+        "entity_id": "light.basement_movie_hue_recessed_03",
+        "name": "basement_movie_hue_recessed_03",
+        "when": "2026-10-17T23:19:02.104576-04:00"
+      },
+      {
+        "state": "on",
+        "entity_id": "light.basement_movie_hue_recessed_01",
+        "name": "basement_movie_hue_recessed_01",
+        "when": "2026-10-17T23:19:02.209868-04:00"
+      },
+      {
+        "state": "on",
+        "entity_id": "light.basement_movie_hue_recessed_04",
+        "name": "basement_movie_hue_recessed_04",
+        "when": "2026-10-17T23:19:02.607206-04:00"
+      },
+      {
+        "name": "[Switch] [Inovelli Blue] : [Basement] [Movie Room] : [Press or Hold] : [Switch Mappings]",
+        "message": "triggered by mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action",
+        "source": "mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action",
+        "entity_id": "automation.basement_movie_room_inovelli_blue_switch_behavior",
+        "context_id": "01M56GAAAQ3JJYJ0YCE5Q82DZP",
+        "domain": "automation",
+        "when": "2026-10-17T23:19:06.327943-04:00"
+      },
+      {
+        "name": "[Switch] [Inovelli Blue] : [Basement] [Movie Room] : [Press or Hold] : [Switch Mappings]",
+        "message": "triggered by mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action",
+        "source": "mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action",
+        "entity_id": "automation.basement_movie_room_inovelli_blue_switch_behavior",
+        "context_id": "01M56GAC7524Q7Y9WYYQ4DZMQT",
+        "domain": "automation",
+        "when": "2026-10-17T23:19:08.261646-04:00"
+      },
+      {
+        "name": "[Switch] [Inovelli Blue] : [Basement] [Movie Room] : [Press or Hold] : [Switch Mappings]",
+        "message": "triggered by mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action",
+        "source": "mqtt topic zigbee2mqtt/basement_movie_inovelli_presence/action",
+        "entity_id": "automation.basement_movie_room_inovelli_blue_switch_behavior",
+        "context_id": "01M56GAC8GQEDCQM6EEWFERS7X",
+        "domain": "automation",
+        "when": "2026-10-17T23:19:08.305070-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "media_player.str_az5000es",
+        "name": "Movie Room Receiver",
+        "when": "2026-10-17T23:19:36.647845-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "media_player.movie_room_shield",
+        "name": "Movie Room Shield",
+        "when": "2026-10-17T23:19:37.187775-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "remote.movie_room_shield",
+        "name": "Movie Room Shield",
+        "when": "2026-10-17T23:19:37.198830-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "media_player.lg_webos_tv_oled83g4wua",
+        "name": "Movie Room LG TV",
+        "when": "2026-10-17T23:19:39.792014-04:00"
+      },
+      {
+        "name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]",
+        "message": "triggered by state of media_player.lg_webos_tv_oled83g4wua",
+        "source": "state of media_player.lg_webos_tv_oled83g4wua",
+        "entity_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+        "context_id": "01M56GBB0G2AGEBDH6J96T6A3G",
+        "domain": "automation",
+        "when": "2026-10-17T23:19:39.792245-04:00",
+        "context_state": "off",
+        "context_entity_id": "media_player.lg_webos_tv_oled83g4wua",
+        "context_entity_id_name": "Movie Room LG TV"
+      },
+      {
+        "state": "off",
+        "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+        "name": "basement_movie_inovelli_presence Occupancy",
+        "when": "2026-10-17T23:20:13.139199-04:00"
+      },
+      {
+        "name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]",
+        "message": "triggered by binary_sensor.basement_movie_inovelli_presence_occupancy via template",
+        "source": "binary_sensor.basement_movie_inovelli_presence_occupancy via template",
+        "entity_id": "automation.light_inovelli_movie_room_motion_cleared_lights_off",
+        "context_id": "01M56GCBJKHB3QP4G77NCK8AYJ",
+        "domain": "automation",
+        "when": "2026-10-17T23:20:13.139688-04:00",
+        "context_state": "off",
+        "context_entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+        "context_entity_id_name": "basement_movie_inovelli_presence Occupancy"
+      },
+      {
+        "name": "[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]",
+        "message": "triggered by binary_sensor.basement_movie_inovelli_presence_occupancy via template",
+        "source": "binary_sensor.basement_movie_inovelli_presence_occupancy via template",
+        "entity_id": "automation.media_basement_movie_room_no_occupancy_tv_off",
+        "context_id": "01M56GCBJMGVHRHXD21SXSM596",
+        "domain": "automation",
+        "when": "2026-10-17T23:20:13.140617-04:00",
+        "context_state": "off",
+        "context_entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+        "context_entity_id_name": "basement_movie_inovelli_presence Occupancy"
+      },
+      {
+        "state": "off",
+        "entity_id": "binary_sensor.basement_movie_inovelli_presence_area1occupancy",
+        "name": "basement_movie_inovelli_presence Occupancy",
+        "when": "2026-10-17T23:20:13.725782-04:00"
+      },
+      {
+        "state": "unavailable",
+        "entity_id": "media_player.lg_webos_tv_oled83g4wua",
+        "name": "Movie Room LG TV",
+        "when": "2026-10-17T23:21:58.922282-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "light.basement_movie_inovelli_presence",
+        "name": "basement_movie_inovelli_presence",
+        "when": "2026-10-17T23:25:13.417783-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "light.basement_movie_hue_recessed_02",
+        "name": "basement_movie_hue_recessed_02",
+        "when": "2026-10-17T23:25:13.532859-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "light.basement_movie_hue_recessed_01",
+        "name": "basement_movie_hue_recessed_01",
+        "when": "2026-10-17T23:25:13.707373-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "light.basement_movie_room_lights",
+        "name": "basement_movie_room_lights",
+        "when": "2026-10-17T23:25:13.721351-04:00",
+        "context_event_type": "automation_triggered",
+        "context_domain": "automation",
+        "context_name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]",
+        "context_message": "triggered by binary_sensor.basement_movie_inovelli_presence_occupancy via template",
+        "context_source": "binary_sensor.basement_movie_inovelli_presence_occupancy via template",
+        "context_entity_id": "automation.light_inovelli_movie_room_motion_cleared_lights_off",
+        "context_entity_id_name": "[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]"
+      },
+      {
+        "state": "off",
+        "entity_id": "light.basement_movie_hue_recessed_03",
+        "name": "basement_movie_hue_recessed_03",
+        "when": "2026-10-17T23:25:13.729670-04:00"
+      },
+      {
+        "state": "off",
+        "entity_id": "light.basement_movie_hue_recessed_04",
+        "name": "basement_movie_hue_recessed_04",
+        "when": "2026-10-17T23:25:13.735241-04:00"
+      }
+    ],
+    "period": "1 hours back from 2026-10-18T03:27:00+00:00",
+    "start_time": "2026-10-18T02:27:00+00:00",
+    "end_time": "2026-10-18T03:27:00+00:00",
+    "entity_filter": null,
+    "total_entries": 45,
+    "returned_entries": 45,
+    "limit": 500,
+    "offset": 0,
+    "order": "oldest",
+    "has_more": false,
+    "filters_applied": {
+      "search": "movie"
+    }
+  },
+  "metadata": {
+    "home_assistant_timezone": "America/New_York",
+    "timestamp_format": "ISO 8601 (America/New_York)",
+    "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/New_York local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+  }
+}

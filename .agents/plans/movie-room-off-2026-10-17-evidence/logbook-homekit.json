@@ -1,0 +1,25 @@
+{
+  "data": {
+    "success": true,
+    "source": "logbook",
+    "entries": [],
+    "period": "1 hours back from 2026-10-18T03:27:00+00:00",
+    "start_time": "2026-10-18T02:27:00+00:00",
+    "end_time": "2026-10-18T03:27:00+00:00",
+    "entity_filter": null,
+    "total_entries": 0,
+    "returned_entries": 0,
+    "limit": 100,
+    "offset": 0,
+    "order": "newest",
+    "has_more": false,
+    "filters_applied": {
+      "search": "homekit"
+    }
+  },
+  "metadata": {
+    "home_assistant_timezone": "America/New_York",
+    "timestamp_format": "ISO 8601 (America/New_York)",
+    "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/New_York local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+  }
+}

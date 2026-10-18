@@ -1,0 +1,35 @@
+{
+  "homeassistant": {
+    "info": {
+      "version": "core-2026.9.3",
+      "installation_type": "Home Assistant Container",
+      "dev": false,
+      "hassio": false,
+      "docker": true,
+      "container_arch": "amd64",
+      "user": "root",
+      "virtualenv": false,
+      "python_version": "3.14.6",
+      "os_name": "Linux",
+      "os_version": "6.18.44-talos",
+      "arch": "x86_64",
+      "timezone": "America/New_York",
+      "config_dir": "/config"
+    }
+  },
+  "recorder": {
+    "info": {
+      "oldest_recorder_run": {
+        "value": "2026-09-13T04:34:11.901529",
+        "type": "date"
+      },
+      "current_recorder_run": {
+        "value": "2026-10-12T16:03:05.137344+00:00",
+        "type": "date"
+      },
+      "estimated_db_size": "7039.74 MiB",
+      "database_engine": "sqlite",
+      "database_version": "3.53.2"
+    }
+  }
+}

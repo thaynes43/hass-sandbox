@@ -1,0 +1,435 @@
+{
+  "data": {
+    "success": true,
+    "source": "history",
+    "entities": [
+      {
+        "entity_id": "light.basement_movie_hue_recessed_01",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_01"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:13.397104-04:00",
+            "last_updated": "2026-10-17T22:03:13.397104-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_01"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:13.397104-04:00",
+            "last_updated": "2026-10-17T22:03:13.460535-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_01"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:13.397104-04:00",
+            "last_updated": "2026-10-17T22:03:18.400077-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_01"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:18:49.703453-04:00",
+            "last_updated": "2026-10-17T23:18:49.703453-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_01"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:02.209868-04:00",
+            "last_updated": "2026-10-17T23:19:02.209868-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_01"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:02.209868-04:00",
+            "last_updated": "2026-10-17T23:19:02.234053-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_01"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:02.209868-04:00",
+            "last_updated": "2026-10-17T23:19:07.251170-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_01"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:25:13.707373-04:00",
+            "last_updated": "2026-10-17T23:25:13.707373-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_01"
+            }
+          }
+        ],
+        "total_count": 9,
+        "offset": 0,
+        "limit": 1000,
+        "count": 9,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "light.basement_movie_hue_recessed_02",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_02"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:12.985591-04:00",
+            "last_updated": "2026-10-17T22:03:12.985591-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_02"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:12.985591-04:00",
+            "last_updated": "2026-10-17T22:03:13.007591-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_02"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:12.985591-04:00",
+            "last_updated": "2026-10-17T22:03:18.017315-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_02"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:18:49.724497-04:00",
+            "last_updated": "2026-10-17T23:18:49.724497-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_02"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:01.919507-04:00",
+            "last_updated": "2026-10-17T23:19:01.919507-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_02"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:01.919507-04:00",
+            "last_updated": "2026-10-17T23:19:06.925419-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_02"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:01.919507-04:00",
+            "last_updated": "2026-10-17T23:25:13.513764-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_02"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:25:13.532859-04:00",
+            "last_updated": "2026-10-17T23:25:13.532859-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_02"
+            }
+          }
+        ],
+        "total_count": 9,
+        "offset": 0,
+        "limit": 1000,
+        "count": 9,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "light.basement_movie_hue_recessed_03",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_03"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:12.608685-04:00",
+            "last_updated": "2026-10-17T22:03:12.608685-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_03"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:12.608685-04:00",
+            "last_updated": "2026-10-17T22:03:12.632548-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_03"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:12.608685-04:00",
+            "last_updated": "2026-10-17T22:03:17.641543-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_03"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:18:49.729254-04:00",
+            "last_updated": "2026-10-17T23:18:49.729254-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_03"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:02.104576-04:00",
+            "last_updated": "2026-10-17T23:19:02.104576-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_03"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:02.104576-04:00",
+            "last_updated": "2026-10-17T23:19:07.073954-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_03"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:25:13.729670-04:00",
+            "last_updated": "2026-10-17T23:25:13.729670-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_03"
+            }
+          }
+        ],
+        "total_count": 8,
+        "offset": 0,
+        "limit": 1000,
+        "count": 8,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "light.basement_movie_hue_recessed_04",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_04"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:12.791491-04:00",
+            "last_updated": "2026-10-17T22:03:12.791491-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_04"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:12.791491-04:00",
+            "last_updated": "2026-10-17T22:03:12.810911-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_04"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:12.791491-04:00",
+            "last_updated": "2026-10-17T22:03:17.826936-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_04"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:18:49.447750-04:00",
+            "last_updated": "2026-10-17T23:18:49.447750-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_04"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:02.607206-04:00",
+            "last_updated": "2026-10-17T23:19:02.607206-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_04"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:02.607206-04:00",
+            "last_updated": "2026-10-17T23:19:07.546482-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_04"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:25:13.735241-04:00",
+            "last_updated": "2026-10-17T23:25:13.735241-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_hue_recessed_04"
+            }
+          }
+        ],
+        "total_count": 8,
+        "offset": 0,
+        "limit": 1000,
+        "count": 8,
+        "has_more": false,
+        "next_offset": null
+      },
+      {
+        "entity_id": "light.basement_movie_inovelli_presence",
+        "period": {
+          "start": "2026-10-18T02:00:00+00:00",
+          "end": "2026-10-18T03:30:00+00:00"
+        },
+        "states": [
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T22:00:00-04:00",
+            "last_updated": "2026-10-17T22:00:00-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_inovelli_presence"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:12.499850-04:00",
+            "last_updated": "2026-10-17T22:03:12.499850-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_inovelli_presence"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:12.499850-04:00",
+            "last_updated": "2026-10-17T22:03:13.153378-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_inovelli_presence"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T22:03:12.499850-04:00",
+            "last_updated": "2026-10-17T22:03:18.173816-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_inovelli_presence"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:18:49.486745-04:00",
+            "last_updated": "2026-10-17T23:18:49.486745-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_inovelli_presence"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:01.699679-04:00",
+            "last_updated": "2026-10-17T23:19:01.699679-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_inovelli_presence"
+            }
+          },
+          {
+            "state": "on",
+            "last_changed": "2026-10-17T23:19:01.699679-04:00",
+            "last_updated": "2026-10-17T23:19:06.467917-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_inovelli_presence"
+            }
+          },
+          {
+            "state": "off",
+            "last_changed": "2026-10-17T23:25:13.417783-04:00",
+            "last_updated": "2026-10-17T23:25:13.417783-04:00",
+            "attributes": {
+              "friendly_name": "basement_movie_inovelli_presence"
+            }
+          }
+        ],
+        "total_count": 8,
+        "offset": 0,
+        "limit": 1000,
+        "count": 8,
+        "has_more": false,
+        "next_offset": null
+      }
+    ],
+    "period": {
+      "start": "2026-10-18T02:00:00+00:00",
+      "end": "2026-10-18T03:30:00+00:00"
+    },
+    "query_params": {
+      "minimal_response": false,
+      "significant_changes_only": false,
+      "limit": 1000,
+      "offset": 0,
+      "order": "asc"
+    }
+  },
+  "metadata": {
+    "home_assistant_timezone": "America/New_York",
+    "timestamp_format": "ISO 8601 (America/New_York)",
+    "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/New_York local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+  }
+}

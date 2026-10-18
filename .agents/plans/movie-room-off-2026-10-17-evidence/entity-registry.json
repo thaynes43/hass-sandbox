@@ -1,0 +1,87 @@
+{
+  "success": true,
+  "count": 3,
+  "entity_entries": [
+    {
+      "entity_id": "binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor",
+      "name": null,
+      "original_name": "Presence-Sensor-FP2-A4B2 Presence Sensor 1",
+      "icon": null,
+      "area_id": null,
+      "disabled_by": null,
+      "hidden_by": null,
+      "enabled": true,
+      "hidden": false,
+      "aliases": [
+        null
+      ],
+      "labels": [],
+      "categories": {},
+      "device_class": null,
+      "original_device_class": "occupancy",
+      "options": {
+        "conversation": {
+          "should_expose": false
+        }
+      },
+      "platform": "homekit_controller",
+      "device_id": "fc3bde4666b12f755ecf5579ec4fe633",
+      "config_entry_id": "01KE8EJY0N5M0YKHPY6SQ0CE2R",
+      "unique_id": "55:1C:B0:39:34:3F_1_2688"
+    },
+    {
+      "entity_id": "binary_sensor.basement_movie_inovelli_presence_occupancy",
+      "name": null,
+      "original_name": "Occupancy",
+      "icon": null,
+      "area_id": null,
+      "disabled_by": null,
+      "hidden_by": null,
+      "enabled": true,
+      "hidden": false,
+      "aliases": [
+        null
+      ],
+      "labels": [],
+      "categories": {},
+      "device_class": null,
+      "original_device_class": "occupancy",
+      "options": {
+        "conversation": {
+          "should_expose": false
+        }
+      },
+      "platform": "mqtt",
+      "device_id": "238851523f18e55c74ca8994808d3cd9",
+      "config_entry_id": "01JBDHVYGQ8V7PK299GSMZ28BZ",
+      "unique_id": "0x0c2a6ffffeaa0f92_occupancy_zigbee2mqtt"
+    },
+    {
+      "entity_id": "light.basement_movie_hue_recessed_01",
+      "name": null,
+      "original_name": null,
+      "icon": null,
+      "area_id": null,
+      "disabled_by": null,
+      "hidden_by": null,
+      "enabled": true,
+      "hidden": false,
+      "aliases": [
+        null
+      ],
+      "labels": [],
+      "categories": {},
+      "device_class": null,
+      "original_device_class": null,
+      "options": {
+        "conversation": {
+          "should_expose": false
+        }
+      },
+      "platform": "mqtt",
+      "device_id": "19b327a9c4708be091a355c6d23492db",
+      "config_entry_id": "01JBDHVYGQ8V7PK299GSMZ28BZ",
+      "unique_id": "0x001788010de594e0_light_zigbee2mqtt"
+    }
+  ]
+}
