@@ -47,10 +47,13 @@ wall switches and scene controllers already give people, and must not fight the 
   for 1 hour" matches no built-in intent and goes to the agent. A plain "set a timer for 10 minutes"
   stays a Voice PE timer. Kitchen pipeline, as the kitchen satellite, 2026-10-18: the OpenAI agent
   called the tool with the right minutes in 12 of 12 set requests (1.1–3.3 s to the call, ~3–5 s to
-  the reply); the sentence-trigger phrasings answer in 0.01–1.4 s. The shared prompt still lists
+  the reply); the sentence-trigger phrasings answer in 0.01–1.8 s. The shared prompt still lists
   "ovens" as not available by voice; the agent used the tool anyway. If an agent ever refuses an
   oven timer, narrow that line rather than adding a new one. Not covered: "add 5 minutes to the
-  oven timer" (HassIncreaseTimer answers "couldn't find that timer"), pause/resume.
+  oven timer" (HassIncreaseTimer answers "couldn't find that timer"), pause/resume, and a set phrase
+  with no verb ("10 minute timer for the oven" still starts a Voice PE timer named "the oven"). The
+  automation's length parser refuses anything it cannot read fully ("a hundred minutes" asks again)
+  rather than set a wrong length.
 
 ## Basement
 

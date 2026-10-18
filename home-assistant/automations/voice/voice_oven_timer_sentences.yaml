@@ -9,10 +9,14 @@
 # Tom's own phrasing, "set the oven timer for 1 hour", is NOT matched here: no built-in intent takes it,
 # so it reaches the agent, which converts the length to minutes better than a template can. Only the
 # set phrasings the built-in timer would steal are parsed here, by the `minutes` template below: digits
-# or number words up to ninety, hours, minutes, seconds, "an hour", "half an hour", "a quarter hour" and
-# "and a half".
+# or number words up to ninety-nine, hours, minutes, seconds, "an hour", "half an hour", "a quarter hour"
+# and "and a half". Anything left over (a bare number, "a hundred") makes it 0 = not understood, which
+# asks again instead of setting a wrong length (PR #256 review: "seventy five" once parsed as 5).
 # The oven is read from the sentence: lower/bottom = lower, upper/top = upper, neither = upper for set
 # and both ovens for cancel and status (the script's rule).
+# Not covered: a set phrase with no verb, "10 minute timer for the oven", still starts a Voice PE timer
+# named "the oven" (a leading {duration} wildcard here also swallowed "cancel the timer for the oven",
+# so that pattern was dropped); "add 5 minutes to the oven timer" (HassIncreaseTimer); pause/resume.
 alias: '[Voice] Oven timer sentences (before the built-in timers)'
 description: 'Home Assistant''s built-in timer intents treat ''oven'' as the name of a Voice PE timer, so
   ''cancel the oven timer'', ''how long is left on the oven timer'' and ''set a 10 minute timer for the
@@ -52,16 +56,19 @@ triggers:
 actions:
 - alias: 'Which oven, and for set the length in minutes. The parser normalises the captured duration
     (number words to digits, twenty five = 25, "N and a half", "half an hour", "a quarter hour", "an hour"),
-    then adds up every <number> hour/minute/second it finds. 0 = not understood'
+    then adds up every <number> hour/minute/second it finds. 0 = not understood, also when any word or
+    bare number other than and/a/an/the is left over. HA trims each rendered variable, so `said` has
+    no edge spaces and `which` pads it itself (a sentence can START with lower)'
   variables:
-    said: '{{ '' '' ~ (trigger.sentence | default('''', true) | lower | regex_replace(''[^a-z0-9]+'', ''
-      '') | trim) ~ '' '' }}'
-    which: '{{ ''lower'' if '' lower '' in said or '' bottom '' in said else (''upper'' if '' upper '' in
-      said or '' top '' in said else '''') }}'
+    said: '{{ trigger.sentence | default('''', true) | lower | regex_replace(''[^a-z0-9]+'', '' '') | trim
+      }}'
+    which: '{% set w = '' '' ~ said ~ '' '' %}{{ ''lower'' if '' lower '' in w or '' bottom '' in w else
+      (''upper'' if '' upper '' in w or '' top '' in w else '''') }}'
     minutes: '{% set words = {''one'': 1, ''two'': 2, ''three'': 3, ''four'': 4, ''five'': 5, ''six'': 6,
       ''seven'': 7, ''eight'': 8, ''nine'': 9, ''ten'': 10, ''eleven'': 11, ''twelve'': 12, ''thirteen'':
       13, ''fourteen'': 14, ''fifteen'': 15, ''sixteen'': 16, ''seventeen'': 17, ''eighteen'': 18, ''nineteen'':
-      19, ''twenty'': 20, ''thirty'': 30, ''forty'': 40, ''fifty'': 50, ''sixty'': 60, ''ninety'': 90} %}{%
+      19, ''twenty'': 20, ''thirty'': 30, ''forty'': 40, ''fifty'': 50, ''sixty'': 60, ''seventy'': 70, ''eighty'': 80,
+      ''ninety'': 90} %}{%
       set ns = namespace(t='' '' ~ ((trigger.slots or {}).get(''duration'', '''') | string | lower | regex_replace(''[^a-z0-9.]+'',
       '' '') | regex_replace(''\\.(?!\\d)'', '' '')) ~ '' '') %}{% for w, n in words.items() %}{% set ns.t
       = ns.t | regex_replace('' '' ~ w ~ '' '', '' '' ~ n ~ '' '') | regex_replace('' '' ~ w ~ '' '', ''
@@ -71,8 +78,9 @@ actions:
       an? (hour|minute|second)'', '' 1 \\1'') | regex_replace('' (\\d+) (hours?|minutes?) and a half '', ''
       \\1.5 \\2 '') %}{% set h = ns.t | regex_findall('' (\\d+(?:\\.\\d+)?) ?h(?:ou)?rs? '') | map(''float'')
       | sum %}{% set m = ns.t | regex_findall('' (\\d+(?:\\.\\d+)?) ?min(?:ute)?s? '') | map(''float'') | sum
-      %}{% set s = ns.t | regex_findall('' (\\d+(?:\\.\\d+)?) ?sec(?:ond)?s? '') | map(''float'') | sum %}{{
-      h * 60 + m + s / 60 }}'
+      %}{% set s = ns.t | regex_findall('' (\\d+(?:\\.\\d+)?) ?sec(?:ond)?s? '') | map(''float'') | sum %}{% set
+      leftover = ns.t | regex_replace('' \\d+(?:\\.\\d+)? ?(?:h(?:ou)?rs?|min(?:ute)?s?|sec(?:ond)?s?)(?= )'',
+      '''') | regex_replace('' (?:and|an?|the)(?= )'', '''') | trim %}{{ 0 if leftover else h * 60 + m + s / 60 }}'
 - if:
   - condition: trigger
     id: set

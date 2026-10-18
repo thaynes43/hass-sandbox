@@ -78,8 +78,9 @@ sequence:
         timer: sensor.kitchen_cafe_oven_nrz120804q_nrz120804q_lower_oven_kitchen_timer
         remote: binary_sensor.nrz120804q_lower_oven_remote_enabled
     wanted: '{{ action | default('''', true) | string | lower | trim }}'
-    which: '{{ oven | default('''', true) | string | lower | trim | regex_replace(''^(top|upper oven)$'',
-      ''upper'') | regex_replace(''^(bottom|lower oven)$'', ''lower'') }}'
+    which: '{{ oven | default('''', true) | string | lower | trim | regex_replace(''^(top|upper)( oven)?$'',
+      ''upper'') | regex_replace(''^(bottom|lower)( oven)?$'', ''lower'') | regex_replace(''^(both|all)(
+      ovens?)?$'', '''') }}'
     raw_minutes: '{{ minutes | default('''', true) }}'
     asked: '{{ raw_minutes | float(0) if raw_minutes | is_number else 0 }}'
     whole: '{{ [((asked | float) + 0.5) | int, 1] | max if (asked | float) > 0 else 0 }}'
@@ -121,7 +122,8 @@ sequence:
         duration: '{{ whole | int }}'
     - alias: The service returns before the cloud write lands and swallows failures; wait for the sensor
         to show the new length (~1.3 s on 2026-10-18). A wait_template, not wait_for_trigger, so an update
-        that lands before the wait starts still counts
+        that lands before the wait starts still counts. A running timer already within a minute of the new
+        length passes at once; that is accepted, since the oven then shows that length either way
       wait_template: '{% set e = ovens[targets[0]].timer %}{% set f = {''s'': 1, ''min'': 60, ''h'': 3600,
         ''d'': 86400} %}{{ states(e) | is_number and (((states(e) | float) * f.get(state_attr(e, ''unit_of_measurement''),
         60)) - (whole | int) * 60) | abs < 60 }}'
