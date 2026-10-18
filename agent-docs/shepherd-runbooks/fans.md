@@ -18,8 +18,11 @@ all-fans-down systemic signature. A Pavilion page has no automated fix here:
 read its AP first, then try a UniFi `reconnect_client` (MAC
 `84:1f:e8:a0:47:84`, alias `MF Fan Pavilion`, fixed IP `192.168.50.184`), and
 if it stays down, it needs a breaker or switch cycle by a person. Never call
-`script.zen32_hard_reset` for it. Where this runbook says "six fans", read
-"the six ZEN32 fans".
+`script.zen32_hard_reset` for it. Where this runbook says "six fans" about
+repairs, backoff ladders or the systemic signature, it means the six ZEN32 fans.
+The Pavilion fan's State and Ping rows still go into the same result list, so a
+Pavilion blip keeps the `fans` checker non-ok (and the alert clock running) like
+any other fan's.
 
 ## Domain fact (read this first)
 
