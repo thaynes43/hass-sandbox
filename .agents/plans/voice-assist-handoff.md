@@ -151,6 +151,10 @@ set-temperature intent takes one thermostat only. School lunch questions ("what'
 tomorrow", "what is Jackson having on Friday") go to `script.voice_school_lunch` (2026-09-27,
 read-only). Tested by text on the Kitchen and Phone Assist pipelines; not yet asked out loud. Its
 building helper is private: see `agent-docs/voice-control-map.md` *House-wide mechanisms*.
+Oven timers ("set the oven timer for 1 hour", "cancel the oven timer", "how long is left on the
+lower oven timer") go to `script.voice_oven_timer` (2026-10-18, #255), and the phrasings the
+built-in timer intents would steal go through `automation.voice_oven_timer_sentences` first. Tested
+by text as the kitchen satellite; not yet asked out loud. Details: the control map, same section.
 
 How music routing works, the patched blueprint, and why the Rumpus KEFs get no special
 handling: rollout plan, *Phase 3*. **The Music Assistant blueprint is locally patched**
