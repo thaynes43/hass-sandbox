@@ -26,7 +26,7 @@ docs/
 │   ├── vestaboard.md               # Vestaboard flip board control
 │   ├── health-checks.md            # System health monitoring
 │   ├── media-dashboard.md          # Media dashboard wall card
-│   └── kitchen-timer.md            # Voice oven timer on the kitchen display
+│   └── kitchen-timer.md            # Kitchen voice timers on the kitchen display
 ├── architecture/
 │   └── overview.md                # System diagram, data flows, key concepts
 ├── apps/
@@ -54,7 +54,7 @@ Update this map when adding or removing pages.
 | Vestaboard | `docs/features/vestaboard.md` | vestaboard_apps, vestaboard cards |
 | System Health Monitoring | `docs/features/health-checks.md` | health_checks |
 | Media Dashboard | `docs/features/media-dashboard.md` | media_dashboard_app |
-| Kitchen Oven Timer | `docs/features/kitchen-timer.md` | `timer.oven`, `script.kitchen_timer_relay`, oven-timer automations, kitchen-timer-card |
+| Kitchen Timers | `docs/features/kitchen-timer.md` | `timer.kitchen_timer_1..3`, `script.kitchen_timer_relay`, `script.kitchen_timer_voice`, kitchen custom sentences + intent_script, ring automation, kitchen-timer-card |
 | Architecture Overview | `docs/architecture/overview.md` | System diagram, data flows, self-provisioning, relay pattern |
 | AppDaemon Apps | `docs/apps/index.md` | App listing, provider listing, dependency graph |
 | Getting Started | `docs/setup/getting-started.md` | Clone, venv, secrets, run, test, serve docs |

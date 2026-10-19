@@ -1,0 +1,149 @@
+# automation.kitchen_timer_ring_and_announce (pushed live through the HA config API; id kitchen_timer_ring_and_announce,
+# stripped here). hass-sandbox #262, #266. Replaces automation.oven_timer_ring_and_announce.
+# When timer.kitchen_timer_N finishes: script.kitchen_timer_relay `ring` turns input_boolean.kitchen_timer_N_ringing on,
+# which turns that row of the kitchen display's timer card amber and makes the kitchen screen chime every 5 s, and the
+# kitchen Voice PE announces once ("Pasta timer is done."). A ring stops on a tap on its row, "stop the timer", a new
+# start in that slot, or after 10 minutes (relay `expire`). At HA start the relay `reset` clears any ring left on and
+# stale names. A once-a-minute sweep backs up the cap: a pending `for` does not survive a restart or a reload of this
+# automation. All helper writes go through the relay.
+# Known gap: a timer that runs out while HA itself is down finishes during startup, before automations load, so that one
+# rings nowhere.
+alias: Kitchen timer ring and announce
+description: >-
+  hass-sandbox #266. timer.kitchen_timer_N finished: ringing on through script.kitchen_timer_relay (the kitchen display
+  card chimes) and the kitchen Voice PE announces "<name> timer is done." Ringing turns off after 10 minutes, and at HA
+  start.
+mode: queued
+max: 10
+triggers:
+  - trigger: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.kitchen_timer_1
+    id: finished
+    variables:
+      slot: 1
+  - trigger: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.kitchen_timer_2
+    id: finished
+    variables:
+      slot: 2
+  - trigger: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.kitchen_timer_3
+    id: finished
+    variables:
+      slot: 3
+  - trigger: state
+    entity_id: input_boolean.kitchen_timer_1_ringing
+    to: "on"
+    for:
+      minutes: 10
+    id: cap
+    variables:
+      slot: 1
+  - trigger: state
+    entity_id: input_boolean.kitchen_timer_2_ringing
+    to: "on"
+    for:
+      minutes: 10
+    id: cap
+    variables:
+      slot: 2
+  - trigger: state
+    entity_id: input_boolean.kitchen_timer_3_ringing
+    to: "on"
+    for:
+      minutes: 10
+    id: cap
+    variables:
+      slot: 3
+  - trigger: homeassistant
+    event: start
+    id: startup
+  - trigger: time_pattern
+    minutes: /1
+    id: sweep
+conditions:
+  - alias: The minute sweep only runs when a ring has been on for 10 minutes (keeps the logbook quiet)
+    condition: or
+    conditions:
+      - condition: not
+        conditions:
+          - condition: trigger
+            id: sweep
+      - condition: state
+        entity_id: input_boolean.kitchen_timer_1_ringing
+        state: "on"
+        for:
+          minutes: 10
+      - condition: state
+        entity_id: input_boolean.kitchen_timer_2_ringing
+        state: "on"
+        for:
+          minutes: 10
+      - condition: state
+        entity_id: input_boolean.kitchen_timer_3_ringing
+        state: "on"
+        for:
+          minutes: 10
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: finished
+        sequence:
+          - action: script.kitchen_timer_relay
+            data:
+              command: ring
+              payload: '{"slot": {{ slot }}}'
+            response_variable: rung
+          - alias: >-
+              Announce unless the relay skipped the ring (empty reply: the timer runs again after a +1 min that raced the
+              finish). The satellite may be busy with a conversation; the display still rings.
+            if:
+              - condition: template
+                value_template: "{{ rung.response | default('', true) | length > 0 }}"
+            then:
+              - action: assist_satellite.announce
+                continue_on_error: true
+                target:
+                  entity_id: assist_satellite.kitchen_assist_assist_satellite
+                data:
+                  message: "{{ rung.response }}"
+      - conditions:
+          - condition: trigger
+            id: cap
+        sequence:
+          - action: script.kitchen_timer_relay
+            data:
+              command: expire
+              payload: '{"slot": {{ slot }}}'
+      - conditions:
+          - condition: trigger
+            id: startup
+        sequence:
+          - action: script.kitchen_timer_relay
+            data:
+              command: reset
+      - conditions:
+          - condition: trigger
+            id: sweep
+        sequence:
+          - repeat:
+              for_each: [1, 2, 3]
+              sequence:
+                - if:
+                    - condition: template
+                      value_template: >-
+                        {{ is_state('input_boolean.kitchen_timer_' ~ repeat.item ~ '_ringing', 'on') and now() -
+                        states['input_boolean.kitchen_timer_' ~ repeat.item ~ '_ringing'].last_changed
+                        >= timedelta(minutes=10) }}
+                  then:
+                    - action: script.kitchen_timer_relay
+                      data:
+                        command: expire
+                        payload: '{"slot": {{ repeat.item }}}'

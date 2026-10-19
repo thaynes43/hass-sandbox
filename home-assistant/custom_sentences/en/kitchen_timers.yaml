@@ -1,0 +1,168 @@
+# /config/custom_sentences/en/kitchen_timers.yaml (hass-sandbox #266). Reload with conversation.reload (no restart).
+# Kitchen only: every block has `requires_context: area: Kitchen`, which hassil checks against the area of the
+# satellite that heard the sentence. The kitchen Voice PE therefore sends every timer or countdown phrasing to the
+# KitchenTimer intent (intent_script in packages/kitchen_timer.yaml -> script.kitchen_timer_voice ->
+# script.kitchen_timer_relay), shown on the kitchen Connect display. Every other satellite (no Kitchen area, or no
+# area at all) never matches these and keeps the built-in Voice PE timer intents unchanged.
+# Custom sentences win over the built-in timer sentences when both match (HA prefers custom-sentence results). Among
+# these, the parse with fewer wildcards wins, then the one with more literal words. "{kt_duration} timer" (start) fits
+# almost anything ending in "timer", so every other command ending in "timer" has at most one wildcard plus its own
+# verb: "cancel the pasta timer" is a cancel, and "add 2 minutes to the pasta timer" captures "2 minutes to the pasta"
+# in one wildcard (the voice script splits length and name) instead of losing to start with two.
+# The wildcards ({kt_label}, {kt_duration}) always sit next to the word timer / countdown, so these never catch a
+# non-timer request such as "add milk to the shopping list". The slot `command` is fixed per block; the voice script
+# parses lengths and names out of the wildcard text.
+# Not covered on purpose: delayed commands ("turn off the lights in 5 minutes") stay built-in.
+language: en
+intents:
+  KitchenTimer:
+    data:
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: start
+        sentences:
+          - "<kt_set> [a|an|the|my] <kt_noun> [(for|of|to)] {kt_duration:duration}"
+          - "<kt_set> [a|an|the|my] {kt_label:timer_label} <kt_noun> (for|of|to) {kt_duration:duration}"
+          - "<kt_set> [a|an|the|my] <kt_noun> (named|called|for) {kt_label:timer_label} (for|of|to) {kt_duration:duration}"
+          - "<kt_set> [a|an|the|my] {kt_duration:duration} <kt_noun>"
+          - "<kt_set> [a|an|the|my] {kt_duration:duration} <kt_noun> (named|called|for) {kt_label:timer_label}"
+          - "<kt_set> [a|an|the|my] <kt_noun>"
+          - "<kt_noun> (for|of) {kt_duration:duration}"
+          - "count down [from] {kt_duration:duration}"
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: start
+          bare: 1
+        sentences:
+          - "{kt_duration:duration} timer"
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: add
+        sentences:
+          - "(add|put) {kt_duration:duration} <kt_noun>"
+          - "(add|put) {kt_duration:duration} (to|on) [the|my|our] <kt_noun> [(for|on|named|called)] {kt_label:timer_label}"
+          - "(increase|extend) [the|my|our] [{kt_label:timer_label}] <kt_noun> by {kt_duration:duration}"
+          - "(add|give it|give me) [another|an extra] {kt_more:more} [more|extra] minute[s] [(to|on) [the|my|our] [{kt_label:timer_label}] <kt_noun>]"
+          - "(add|give it|give me) [another|an extra] {kt_more:more} [more|extra] minute[s] (to|on) [the|my|our] {kt_label:timer_label}"
+          - "{kt_more:more} more minute[s]"
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: add
+          more: 1
+        sentences:
+          - "(add|give it|give me) (a|one|another|one more|an extra) minute [(to|on) [the|my|our] [{kt_label:timer_label}] <kt_noun>]"
+          - "one more minute"
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: add
+        sentences:
+          - "(add|give it|give me) [another|an extra] {kt_secs:more_seconds} [more|extra] second[s] [(to|on) [the|my|our] [{kt_label:timer_label}] <kt_noun>]"
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: subtract
+        sentences:
+          - "(take|subtract) {kt_duration:duration} <kt_noun>"
+          - "(remove|take|subtract) {kt_duration:duration} (from|off) [the|my|our] <kt_noun> [(for|on|named|called)] {kt_label:timer_label}"
+          - "(decrease|shorten|reduce) [the|my|our] [{kt_label:timer_label}] <kt_noun> by {kt_duration:duration}"
+          - "(remove|take|subtract) {kt_more:more} minute[s] [(off|from) [the|my|our] [{kt_label:timer_label}] <kt_noun>]"
+          - "(remove|take|subtract) {kt_more:more} minute[s] (off|away)"
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: subtract
+          more: 1
+        sentences:
+          - "(remove|take|subtract) (a|one) minute [(off|from) [the|my|our] [{kt_label:timer_label}] <kt_noun>]"
+          - "(remove|take|subtract) (a|one) minute (off|away)"
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: status
+        sentences:
+          - "how (long|much time|much longer) [is] (left|remaining) (on|for|in) [the|my|our] [{kt_label:timer_label}] <kt_nouns>"
+          - "how (long|much time|much longer) [is] (left|remaining) (on|for|in) [the|my|our] <kt_noun> [(for|on|named|called)] {kt_label:timer_label}"
+          - "[how much] time [is] (left|remaining) on [the|my|our] <kt_noun> [(for|on|named|called)] {kt_label:timer_label}"
+          - "status of [the|my|our] <kt_noun> [(for|on|named|called)] {kt_label:timer_label}"
+          - "how (long|much time) [is] (left|remaining)"
+          - "[how much] time [is] (left|remaining) on [the|my|our] [{kt_label:timer_label}] <kt_nouns>"
+          - "(what's|whats|what is) left on [the|my|our] [{kt_label:timer_label}] <kt_nouns>"
+          - "how long until [the|my|our] [{kt_label:timer_label}] <kt_noun> (is done|goes off|finishes|rings|ends|is up)"
+          - "how much longer (on|for) [the|my|our] [{kt_label:timer_label}] <kt_noun>"
+          - "[the] [{kt_label:timer_label}] <kt_nouns> status"
+          - "status of [the|my|our] [{kt_label:timer_label}] <kt_nouns>"
+          - "(check|read) [the|my|our] [{kt_label:timer_label}] <kt_nouns>"
+          - "(is|are) [there] [a|an|the|any] [{kt_label:timer_label}] <kt_nouns> (running|on|set|going)"
+          - "(what|which) <kt_nouns> (are|is) (running|on|set|going)"
+          - "what <kt_nouns> do I have [running|set|going|on]"
+          - "(list|show) [all] [the|my|our] <kt_nouns>"
+          - "what are [all] [the|my|our] <kt_nouns>"
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: cancel
+        sentences:
+          - "(cancel|clear|end|delete|remove|reset|kill|turn off) [the|my|our] [{kt_label:timer_label}] <kt_noun>"
+          - "(cancel|clear|end|delete|remove|kill|turn off) [the|my|our] <kt_noun> [(for|on|named|called)] {kt_label:timer_label}"
+          - "turn [the|my|our] [{kt_label:timer_label}] <kt_noun> off"
+          - "(never mind|get rid of|forget|scrap|drop) [the|my|our] [{kt_label:timer_label}] <kt_noun>"
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: cancel_all
+        sentences:
+          - "(cancel|clear|end|delete|remove|reset|kill|turn off) (all|every|both) [of] [the|my|our] <kt_nouns>"
+          - "(cancel|clear|end|delete|remove|reset|kill|turn off) [the|my|our] (timers|countdowns)"
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: stop
+        sentences:
+          - "stop [the|my|our] [{kt_label:timer_label}] <kt_noun>"
+          - "stop [the|my|our] <kt_noun> [(for|on|named|called)] {kt_label:timer_label}"
+          - "(stop|silence|dismiss|mute|quiet|turn off|shut off) [the|my|our] [{kt_label:timer_label}] <kt_noun> (alarm|chime|ringing|beeping|sound|bell)"
+          - "(stop|silence|dismiss|mute|quiet|turn off|shut off) [the] (alarm|chime|chiming|ringing|beeping|bell)"
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: stop_all
+        sentences:
+          - "stop (all|every|both) [of] [the|my|our] <kt_nouns>"
+          - "stop [the|my|our] (timers|countdowns)"
+          - "(stop|silence|dismiss|mute|quiet|turn off|shut off) [all] [the] [<kt_noun>] (alarms|chimes|bells)"
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: pause
+        sentences:
+          - "pause [the|my|our] [{kt_label:timer_label}] <kt_nouns>"
+          - "pause [the|my|our] <kt_noun> [(for|on|named|called)] {kt_label:timer_label}"
+      - requires_context:
+          area: Kitchen
+        slots:
+          command: resume
+        sentences:
+          - "(resume|continue|unpause) [the|my|our] [{kt_label:timer_label}] <kt_nouns>"
+          - "(resume|continue|unpause) [the|my|our] <kt_noun> [(for|on|named|called)] {kt_label:timer_label}"
+lists:
+  kt_label:
+    wildcard: true
+  kt_duration:
+    wildcard: true
+  kt_more:
+    range:
+      from: 1
+      to: 120
+  kt_secs:
+    range:
+      from: 1
+      to: 120
+expansion_rules:
+  kt_set: "(set|start|make|create|begin|put on|i need)"
+  kt_noun: "(timer|countdown|count down)"
+  kt_nouns: "(timer|timers|countdown|countdowns)"
