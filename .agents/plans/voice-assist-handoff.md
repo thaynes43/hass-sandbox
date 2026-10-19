@@ -160,8 +160,8 @@ one HA restart Tom approved) → `script.kitchen_timer_voice` → `script.kitche
 triggers could not do this: they match on every satellite and never fall through. Other rooms keep the
 built-in Voice PE timers (benched from Rumpus and Movie Room). The Café oven's own timer is never used
 (#255: a remote 0x5105 write runs hidden on its LCD; Cook Time was declined, backlog 010). Benched as the
-kitchen satellite for every phrasing, plus an audible two-timer test with Tom (#266 PR). Not yet done: a
-request in Tom's own voice.
+kitchen satellite for every phrasing. Not yet done: the audible two-timer test with Tom (steps on issue #266)
+and a request in Tom's own voice.
 Details: the control map, *House-wide mechanisms*, and `agent-docs/kitchen-connect-display.md`.
 
 How music routing works, the patched blueprint, and why the Rumpus KEFs get no special

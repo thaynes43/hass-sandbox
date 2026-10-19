@@ -98,8 +98,8 @@ Card behaviour:
   is how to tell which screen shows which dashboard and whether audio is allowed. Headless test
   sessions log `unknown IP` (a long-lived token has no `last_used_ip`) and never chime.
 
-End-to-end tests: 2026-10-18 20:06 (one oven timer, #262) and the two-timer audible test for #266 (see the
-PR for what Tom saw and heard).
+End-to-end tests: 2026-10-18 20:06 (one oven timer, #262: Tom heard the chime and the announcement, one tap
+stopped it). The two-timer audible test for #266 is pending; its steps and Tom's result are on issue #266.
 
 ## Voice: why custom sentences and not sentence triggers
 
