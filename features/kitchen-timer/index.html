@@ -27,7 +27,7 @@
     
     
       
-        <title>Kitchen Oven Timer - HaynesOps Home Automation</title>
+        <title>Kitchen Timers - HaynesOps Home Automation</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#kitchen-oven-timer" class="md-skip">
+        <a href="#kitchen-timers" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Kitchen Oven Timer
+              Kitchen Timers
             
           </span>
         </div>
@@ -609,7 +609,7 @@
   <span class="md-ellipsis">
     
   
-    Kitchen Oven Timer
+    Kitchen Timers
   
 
     
@@ -627,7 +627,7 @@
   <span class="md-ellipsis">
     
   
-    Kitchen Oven Timer
+    Kitchen Timers
   
 
     
@@ -651,6 +651,17 @@
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#only-in-the-kitchen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Only in the kitchen
+      
+    </span>
+  </a>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#why-not-the-ovens-own-timer" class="md-nav__link">
@@ -956,6 +967,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#only-in-the-kitchen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Only in the kitchen
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#why-not-the-ovens-own-timer" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1030,41 +1052,46 @@
   
 
 
-<h1 id="kitchen-oven-timer">Kitchen Oven Timer</h1>
-<p>"Okay Nabu, set the oven timer for 35 minutes." The kitchen voice assistant starts the timer, the wall display in the kitchen shows the countdown in big digits, and when it runs out the display chimes until someone taps it while the voice assistant says so out loud.</p>
+<h1 id="kitchen-timers">Kitchen Timers</h1>
+<p>"Okay Nabu, set a pasta timer for 10 minutes." In the kitchen, any timer or countdown you ask for goes to the wall display: up to three at once, each with its own name. The display shows them in big digits. When one runs out, its row turns amber and the display chimes until someone taps it, and the voice assistant says which one is done.</p>
 <table>
 <thead>
 <tr>
-<th>Running</th>
+<th>One timer</th>
+<th>Three at once, one done</th>
 <th>Done</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><img alt="Oven timer counting down on the kitchen display" src="../../img/kitchen-timer-running.png" /></td>
-<td><img alt="Oven timer done, amber card on the kitchen display" src="../../img/kitchen-timer-ringing.png" /></td>
+<td><img alt="One kitchen timer counting down on the kitchen display" src="../../img/kitchen-timer-running.png" /></td>
+<td><img alt="Three kitchen timers, the middle one done and amber" src="../../img/kitchen-timer-three.png" /></td>
+<td><img alt="Pasta timer done, amber card on the kitchen display" src="../../img/kitchen-timer-ringing.png" /></td>
 </tr>
 </tbody>
 </table>
+<h2 id="only-in-the-kitchen">Only in the kitchen</h2>
+<p>Every voice assistant in the house can set timers, and in every other room they still work the way they always have: the timer lives on that room's speaker. The kitchen is different because the kitchen display is right there and the cook needs to see the countdown from the stove. So the kitchen voice assistant, and only that one, sends every timer request to the display.</p>
+<p>That takes a little care. Home Assistant's simplest custom voice commands are matched on the words alone, on every voice assistant in the house, so they can't be limited to one room. These timers use custom sentences that only count when the request comes from a voice assistant in the Kitchen area. Anywhere else, the same words fall through to the built-in timers as before.</p>
 <h2 id="why-not-the-ovens-own-timer">Why not the oven's own timer?</h2>
-<p>The wall oven is a connected Café double oven, and Home Assistant can write its kitchen timer. The oven even counts it down, but its touchscreen only draws a timer that was started on the touchscreen itself. A remote one runs invisibly and can't be dismissed at the oven. The SmartHQ app has no kitchen timer either: its "timer" is Cook Time, which starts a timed bake, and a kitchen timer must never be able to switch an oven on. So the timer lives in Home Assistant, and the kitchen display, which everyone can see from the stove, shows it.</p>
+<p>The wall oven is a connected Café double oven, and Home Assistant can write its kitchen timer. The oven even counts it down, but its touchscreen only draws a timer that was started on the touchscreen itself. A remote one runs invisibly and can't be dismissed at the oven. The SmartHQ app has no kitchen timer either: its "timer" is Cook Time, which starts a timed bake, and a kitchen timer must never be able to switch an oven on. So the timers live in Home Assistant, on the kitchen display everyone can see from the stove.</p>
 <h2 id="how-it-works">How it works</h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>"set the oven timer for 35 minutes"         tap +1 min / Cancel / tap to stop
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>        │ (kitchen Voice PE)                          │ (kitchen display card)
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        ▼                                             ▼
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a> sentence triggers ──────────► script.kitchen_timer_relay ◄──────────┘
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a> (before any AI agent)          the only thing that changes the timer
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>                                         │
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                               timer.oven (survives restarts)
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>                                         │ runs out
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>                                         ▼
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                     ringing on ── display chimes every 5 s (up to 10 min)
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                                └─ Voice PE: "Oven timer is done."
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>"set a pasta timer for 10 minutes"            tap +1 min / ✕ / tap to stop
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>        │ (kitchen voice assistant only)                 │ (kitchen display card)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        ▼                                                │
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a> kitchen sentences ── voice script ──► script.kitchen_timer_relay ◄──┘
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a> (matched in the Kitchen area)  (reads lengths   the only thing that changes the timers
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>                                 and names)              │
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                                   three timer slots (survive restarts), each with a name
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>                                                         │ one runs out
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>                                                         ▼
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                     its row turns amber ── display chimes every 5 s (up to 10 min)
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                                         └─ voice assistant: "Pasta timer is done."
 </code></pre></div>
 <ul>
-<li><strong>Voice</strong> is handled by sentence triggers, so the phrases are matched locally in a fraction of a second, before any AI agent sees them. "Set a timer for 5 minutes" without the word <em>oven</em>, or a named timer like "pasta", is still the voice assistant's own built-in timer.</li>
-<li><strong>One script</strong> owns the timer. The display card and the voice phrases both call it, so "add 5 minutes", the +1 min button and the spoken replies all follow the same rules.</li>
-<li><strong>The display card</strong> swaps into the slot of the family's cruise countdown while a timer runs or rings, and the countdown comes back when it's done. Both cards are exactly the same size, so nothing else on the pixel-tuned dashboard moves.</li>
+<li><strong>Voice</strong> is matched locally in a fraction of a second, before any AI agent sees it.</li>
+<li><strong>One script</strong> owns the timers. The display card and the voice commands both call it, so "add 5 minutes", the +1 min button and the spoken replies all follow the same rules.</li>
+<li><strong>The display card</strong> swaps into the slot of the family's cruise countdown while any timer runs or rings, and the countdown comes back when they're all done. With one timer the card shows big digits; with two or three it shows one row each. Rows keep their places while timers come and go, so a row never moves under your finger. Both cards are exactly the same size, so nothing else on the pixel-tuned dashboard moves.</li>
 </ul>
 <h2 id="what-you-can-say">What you can say</h2>
 <table>
@@ -1076,30 +1103,52 @@
 </thead>
 <tbody>
 <tr>
-<td>"Set the oven timer for 10 minutes", "set a thirty-five minute oven timer"</td>
-<td>"Oven timer set for 35 minutes."</td>
+<td>"Set a timer for 5 minutes", "start a ten minute countdown"</td>
+<td>"Timer set for 5 minutes."</td>
 </tr>
 <tr>
-<td>"How long is left on the oven timer?"</td>
-<td>"About 12 minutes left on the oven timer."</td>
+<td>"Set a pasta timer for 10 minutes", "set the oven timer for 35 minutes"</td>
+<td>"Pasta timer set for 10 minutes."</td>
 </tr>
 <tr>
-<td>"Add 5 minutes to the oven timer"</td>
-<td>"Added 5 minutes. About 17 minutes left."</td>
+<td>"How long is left on the pasta timer?"</td>
+<td>"About 8 minutes left on the pasta timer."</td>
 </tr>
 <tr>
-<td>"Cancel the oven timer", "stop the oven timer"</td>
-<td>"Oven timer canceled." / "Oven timer stopped."</td>
+<td>"What timers are running?", "how much time is left?"</td>
+<td>"Two timers. Pasta has about 8 minutes left and the timer has 2 minutes left."</td>
+</tr>
+<tr>
+<td>"Add 2 minutes to the pasta timer", "give me five more minutes", "add 30 seconds"</td>
+<td>"Added 2 minutes to the pasta timer. About 10 minutes left."</td>
+</tr>
+<tr>
+<td>"Take a minute off timer two"</td>
+<td>"Took 1 minute off Timer 2. 2 minutes left."</td>
+</tr>
+<tr>
+<td>"Pause the pasta timer", "resume the pasta timer"</td>
+<td>"Pasta timer paused."</td>
+</tr>
+<tr>
+<td>"Cancel the pasta timer", "cancel all timers"</td>
+<td>"Pasta timer canceled." / "Both timers canceled."</td>
+</tr>
+<tr>
+<td>"Stop the timer" (while one is ringing), "stop the timers"</td>
+<td>"Pasta timer stopped."</td>
 </tr>
 </tbody>
 </table>
+<p>A timer without a name is "Timer", then "Timer 2" and "Timer 3"; on the display the first one reads "Kitchen timer". A fourth timer gets a polite no: "The kitchen already has three timers running, pasta, rice and the timer. Cancel one first." When more than one timer is running and you don't say which, questions get an answer about all of them and pause or resume applies to all of them. "Five more minutes" or "cancel the timer" goes to the timer that just went off. Otherwise the reply lists the names and asks you to pick one instead of guessing.</p>
 <p>Hours, minutes and seconds work in digits or words ("an hour and a half", "ninety seconds"). If the length can't be understood, the reply asks again instead of guessing.</p>
 <h2 id="the-chime">The chime</h2>
-<p>The chime is a short three-note bell synthesized by the browser on the display, so there is no sound file to host. It plays every five seconds until someone taps the card, says "stop the oven timer", or ten minutes pass. Only the kitchen display chimes; the second wall display shows the same countdown silently. The display allows sound without a tap, but if audio is ever blocked, a small "Tap for sound" badge appears and any tap turns sound back on. The voice assistant's announcement plays either way.</p>
+<p>The chime is a short three-note bell synthesized by the browser on the display, so there is no sound file to host. It plays every five seconds while any timer is done and nobody has stopped it: tap that timer's row, say "stop the timer", or wait ten minutes. Each timer stops on its own, so tapping one never silences another. Only the kitchen display chimes: the card compares the screen's own network address with the one the network currently reports for the kitchen display, so a new address doesn't silence it. The second wall display shows the same timers silently. The display allows sound without a tap, but if audio is ever blocked, a small "Tap for sound" badge appears and any tap turns sound back on. The voice assistant's announcement plays either way.</p>
 <h2 id="built-with">Built with</h2>
 <ul>
-<li>Helpers: <code>timer.oven</code> and <code>input_boolean.oven_timer_ringing</code></li>
-<li><code>script.kitchen_timer_relay</code>, <code>automation.voice_oven_timer_sentences</code>, <code>automation.oven_timer_ring_and_announce</code> (<code>home-assistant/</code> in the repo)</li>
+<li>Helpers: <code>timer.kitchen_timer_1</code> to <code>_3</code>, each with a name (<code>input_text</code>) and a ringing flag (<code>input_boolean</code>)</li>
+<li><code>script.kitchen_timer_relay</code>, <code>script.kitchen_timer_voice</code> and <code>automation.kitchen_timer_ring_and_announce</code> (<code>home-assistant/</code> in the repo)</li>
+<li>Kitchen-only custom sentences (<code>home-assistant/custom_sentences/en/kitchen_timers.yaml</code>) and their <code>intent_script</code> handler (<code>home-assistant/packages/kitchen_timer.yaml</code>)</li>
 <li><code>kitchen-timer-card</code>, a custom Lovelace card (<code>home-assistant/cards/unifi-connect/kitchen-timer/</code>)</li>
 </ul>
 
