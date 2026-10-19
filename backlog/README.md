@@ -31,9 +31,11 @@ incremental patching.
 | 006 | [Give voice agents grounded light totals and coverage](006-grounded-light-counts.md) | Proposed | Medium |
 | 007 | [Movie-room mmWave owner validation](007-movie-room-mmwave-owner-validation.md) | Planned — Tom's next sensor validation session | Small |
 | 008 | [Inovelli mmWave local-control audit](008-inovelli-local-control-audit.md) | Done 2026-10-18 (mudroom + kids' bath vanity fixed; decisions listed) | Small |
+| 009 | [Our own kiosk APK for the UniFi Connect displays](009-connect-display-kiosk-apk.md) | Proposed | Medium |
+| 010 | [Oven Cook Time by voice](010-oven-cook-time-by-voice-declined.md) | Declined (Tom, 2026-10-18) | Medium |
 
 Item 003 ("The image prompt's frame notes do not match the frames actually
 sent") was implemented in AppDaemon 1.21.1 and its file removed: image providers
 now report `capabilities.max_input_images`, the app trims to it before building
 the prompt, and the per-frame notes are labelled by send position. Numbers are
-not reused — the next item is 009.
+not reused — the next item is 011.

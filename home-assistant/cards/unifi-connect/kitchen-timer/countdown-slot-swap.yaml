@@ -1,0 +1,45 @@
+# unifi-connect dashboard (the kitchen Connect display, 192.168.0.105), Home view, column 2:
+# views[0].sections[1].cards[4..5]. Live 2026-10-18, hass-sandbox #262. The repo does not mirror the
+# unifi-connect dashboard, so this file records the slot change only; paste it over the countdown card in
+# the dashboard's raw editor (or apply it with ha_config_set_dashboard python_transform).
+#
+# The Disney countdown and the oven timer share one 440 x 248 slot (both cards are 16:9 at the column
+# width), so the column height and the bottom button row (y=1040 at 1920 x 1080) never move. The two
+# visibility rules are exact complements: countdown while timer.oven is not active/paused and nothing is
+# ringing (also when the timer is unavailable), the timer card otherwise.
+#
+# chime_ips: the card chimes only on a screen whose own IP (the current HA refresh token's
+# last_used_ip) is listed. The other Connect display (.67) logs in as the same user, so the IP is the only
+# thing that tells them apart. If the kitchen display's IP changes, update this list; the Voice PE still
+# announces either way.
+# Card JS: kitchen-timer-card.js in this folder -> /config/www/kitchen-timer/, resource
+# /local/kitchen-timer/kitchen-timer-card.js?v=N.
+- type: custom:countdown-card
+  status_entity: sensor.countdown_status
+  navigation_path: /unifi-connect/countdown
+  visibility:
+  - condition: state
+    entity: timer.oven
+    state_not:
+    - active
+    - paused
+  - condition: state
+    entity: input_boolean.oven_timer_ringing
+    state_not: 'on'
+- type: custom:kitchen-timer-card
+  timer_entity: timer.oven
+  ringing_entity: input_boolean.oven_timer_ringing
+  relay_script: kitchen_timer_relay
+  chime_ips:
+  - 192.168.0.105
+  visibility:
+  - condition: or
+    conditions:
+    - condition: state
+      entity: timer.oven
+      state:
+      - active
+      - paused
+    - condition: state
+      entity: input_boolean.oven_timer_ringing
+      state: 'on'
