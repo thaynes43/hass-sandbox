@@ -1,0 +1,26 @@
+# /config/packages/kitchen_timer.yaml (hass-sandbox #266). Kitchen timers by voice, kitchen satellite only.
+# custom_sentences/en/kitchen_timers.yaml maps every timer/countdown phrasing to the KitchenTimer intent
+# with `requires_context: area: Kitchen`, so only a satellite in the Kitchen area matches it; every other
+# satellite keeps the built-in Voice PE timer intents. This hands the request to the UI-managed
+# script.kitchen_timer_voice and speaks its reply. After this first load, edits reload with
+# intent_script.reload (no restart).
+# `platforms` names no real domain on purpose: intent_script offers each intent as a tool to every LLM
+# agent whose exposed domains overlap `platforms`, and no agent should get this one.
+intent_script:
+  KitchenTimer:
+    description: Kitchen display timers (kitchen satellite only, reached through custom sentences)
+    platforms:
+      - kitchen_timer_sentences_only
+    mode: parallel
+    action:
+      - action: script.kitchen_timer_voice
+        data:
+          command: "{{ command | default('') }}"
+          timer_label: "{{ timer_label | default('') }}"
+          duration: "{{ duration | default('') }}"
+          more: "{{ more | default(0) }}"
+        response_variable: result
+      - stop: Done
+        response_variable: result
+    speech:
+      text: "{{ action_response.response | default('The kitchen timer did not answer.', true) }}"

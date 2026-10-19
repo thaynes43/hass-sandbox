@@ -1,0 +1,116 @@
+# script.kitchen_timer_voice (UI script, pushed live through the HA config API). hass-sandbox #266.
+# Kitchen voice front end for the kitchen display timers. Reached only from the kitchen satellite:
+#   custom_sentences/en/kitchen_timers.yaml (requires_context area: Kitchen) -> intent KitchenTimer
+#   -> intent_script in packages/kitchen_timer.yaml -> this script -> script.kitchen_timer_relay.
+# The reply this returns is what the kitchen Voice PE says.
+# Slots from the sentences (all optional): command, timer_label (the name part: "pasta", "the five minute"),
+# duration (a free-text length, or a whole "5 minute pasta" spec), more (whole minutes from "five more minutes").
+# The parser turns spoken lengths into seconds: digits or number words up to ninety-nine, hours / minutes /
+# seconds, "an hour", "half an hour", "a quarter hour", "N and a half", "another minute", "1 hour 30". For start,
+# words left over after the length become the timer's name ("set a 5 minute pasta timer"). A length it cannot read
+# gives 0 and the relay asks again instead of guessing.
+alias: Kitchen timer voice
+description: >-
+  Kitchen voice front end (hass-sandbox #266): turns the KitchenTimer intent's slots into a
+  script.kitchen_timer_relay call and returns the relay's spoken reply. Called by intent_script KitchenTimer
+  (packages/kitchen_timer.yaml), which only the kitchen satellite reaches.
+icon: mdi:account-voice
+mode: queued
+max: 10
+fields:
+  command:
+    name: Command
+    description: start, add, subtract, cancel, cancel_all, stop, status, pause or resume
+    required: true
+    selector:
+      text: {}
+  timer_label:
+    name: Timer label
+    description: The spoken name part, for example "pasta" or "five minute".
+    selector:
+      text: {}
+  duration:
+    name: Duration
+    description: The spoken length, for example "thirty five minutes" or "an hour and a half".
+    selector:
+      text: {}
+  more:
+    name: More minutes
+    description: Whole minutes from "five more minutes".
+    selector:
+      number:
+        min: 0
+        max: 720
+sequence:
+  - variables:
+      cmd: "{{ command | default('', true) | string | lower | trim }}"
+      label: "{{ timer_label | default('', true) | string | trim }}"
+      spoken: "{{ duration | default('', true) | string | trim }}"
+      more_minutes: "{{ more | default(0, true) | int(0) }}"
+      parse: |-
+        {#- For each text: {seconds, rest}. rest = words left over after the length, fillers removed. -#}
+        {%- set words = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8,
+              'nine': 9, 'ten': 10, 'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14, 'fifteen': 15,
+              'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19, 'twenty': 20, 'thirty': 30, 'forty': 40,
+              'fifty': 50, 'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90} -%}
+        {%- set fill = '(?:and|for|of|named|called|please|now|more|another|extra|timer|timers|countdown|on|to|from|off|the|my|our|a|an)' -%}
+        {%- set out = namespace(l=[]) -%}
+        {%- for key, text in [('label', label), ('spoken', spoken), ('both', label ~ ' ' ~ spoken)] -%}
+          {%- set ns = namespace(t=' ' ~ (text | lower | regex_replace('[^a-z0-9.]+', ' ') | regex_replace('\\.(?!\\d)', ' ')) ~ ' ') -%}
+          {%- for w, n in words.items() -%}
+            {%- set ns.t = ns.t | regex_replace(' ' ~ w ~ ' ', ' ' ~ n ~ ' ') | regex_replace(' ' ~ w ~ ' ', ' ' ~ n ~ ' ') -%}
+          {%- endfor -%}
+          {%- set ns.t = ns.t
+                | regex_replace(' (?:another|one more|an extra) (hour|minute|second)', ' 1 \\1')
+                | regex_replace(' (?:more|another|extra) ', ' ') | regex_replace(' (?:more|another|extra) ', ' ')
+                | regex_replace(' ([2-9])0 ([1-9]) ', ' \\1\\2 ')
+                | regex_replace(' (\\d+) and a half (hour|minute)', ' \\1.5 \\2')
+                | regex_replace(' half (an? )?hour', ' 30 minute')
+                | regex_replace(' (a )?quarter (of )?(an )?hour', ' 15 minute')
+                | regex_replace(' an? (hour|minute|second)', ' 1 \\1')
+                | regex_replace(' (\\d+) (hours?|minutes?) and a half ', ' \\1.5 \\2 ')
+                | regex_replace(' (\\d+(?:\\.\\d+)?) ?(?:h(?:ou)?rs?) (?:and )?(\\d{1,2}) (?!h(?:ou)?rs? |min|sec)', ' \\1 hour \\2 minute ') -%}
+          {%- set h = ns.t | regex_findall(' (\\d+(?:\\.\\d+)?) ?h(?:ou)?rs? ') | map('float') | sum -%}
+          {%- set m = ns.t | regex_findall(' (\\d+(?:\\.\\d+)?) ?min(?:ute)?s? ') | map('float') | sum -%}
+          {%- set s = ns.t | regex_findall(' (\\d+(?:\\.\\d+)?) ?sec(?:ond)?s? ') | map('float') | sum -%}
+          {%- set rest = ns.t | regex_replace(' \\d+(?:\\.\\d+)? ?(?:h(?:ou)?rs?|min(?:ute)?s?|sec(?:ond)?s?)(?= )', ' ')
+                | regex_replace(' ' ~ fill ~ '(?= )', ' ') | regex_replace(' ' ~ fill ~ '(?= )', ' ')
+                | regex_replace('\\s+', ' ') | trim -%}
+          {%- set out.l = out.l + [(key, {'seconds': (h * 3600 + m * 60 + s) | round(0) | int, 'rest': rest})] -%}
+        {%- endfor -%}
+        {{- dict(out.l) -}}
+  - variables:
+      payload: |-
+        {%- if cmd == 'start' -%}
+          {#- The name is whatever is left after the length; a leftover with no letters means the length was not understood. -#}
+          {%- set b = parse.both -%}
+          {%- set ok = b.rest == '' or b.rest is search('[a-z]') -%}
+          {{- {'seconds': b.seconds if ok else 0, 'name': b.rest if ok else ''} | to_json -}}
+        {%- elif cmd in ['add', 'subtract'] and more_minutes > 0 -%}
+          {{- {'seconds': more_minutes * 60, 'name': label} | to_json -}}
+        {%- elif cmd in ['add', 'subtract'] and parse.label.seconds > 0 and parse.label.rest == '' -%}
+          {#- "add 2 minutes to the 5 minute timer": the label is a length, so it picks the timer by its length. -#}
+          {{- {'seconds': parse.spoken.seconds if parse.spoken.rest == '' else 0, 'name': '',
+               'match_seconds': parse.label.seconds} | to_json -}}
+        {%- elif cmd in ['add', 'subtract'] and label -%}
+          {#- "add 2 minutes to timer two": the name came separately. -#}
+          {{- {'seconds': parse.spoken.seconds if parse.spoken.rest == '' else 0, 'name': label} | to_json -}}
+        {%- elif cmd in ['add', 'subtract'] -%}
+          {#- "2 minutes to the pasta": the length is the amount and the words left over name the timer. -#}
+          {%- set b = parse.both -%}
+          {%- set ok = b.rest == '' or b.rest is search('[a-z]') -%}
+          {{- {'seconds': b.seconds if ok else 0, 'name': b.rest if ok else ''} | to_json -}}
+        {%- else -%}
+          {%- set by_length = parse.label.seconds > 0 and parse.label.rest == '' -%}
+          {{- {'name': '' if by_length else label, 'match_seconds': parse.label.seconds if by_length else 0} | to_json -}}
+        {%- endif -%}
+  - action: script.kitchen_timer_relay
+    data:
+      command: "{{ cmd }}"
+      payload: "{{ payload | to_json if payload is mapping else payload }}"
+    response_variable: answer
+  - variables:
+      result:
+        response: "{{ answer.response | default('The kitchen timer did not answer.', true) }}"
+  - stop: Done
+    response_variable: result

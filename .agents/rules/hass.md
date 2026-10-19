@@ -49,6 +49,14 @@ The rulesets in `.agents/rules/` each declare their scope in an "Applies to" lin
 - **One file = one automation/script/blueprint** (single YAML document per file).
 - Keep formatting so the full file can be copy/pasted into the appropriate HA YAML editor for that object.
 
+### Config files (`home-assistant/custom_sentences/**`, `home-assistant/packages/**`)
+
+- Mirrors of files under `/config/custom_sentences/` and `/config/packages/` in the HA pod, byte for byte (copied in
+  with kubectl exec, not pasted into a UI editor). Custom sentences reload with `conversation.reload`; a package
+  for an integration that is already loaded reloads with that integration's reload service. Loading a new YAML
+  integration needs an HA restart, so ask before adding one. First use: the kitchen timers (#266,
+  `agent-docs/kitchen-connect-display.md`).
+
 ### Helpers
 
 - **Do not** add new helper definitions/snippets under `home-assistant/helpers/**` (treat it as legacy reference only).

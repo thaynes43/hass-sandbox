@@ -1,199 +1,517 @@
-# script.kitchen_timer_relay (created live via the HA config API, 2026-10-18). hass-sandbox #262.
-# The one place that changes the kitchen oven timer: timer.oven (restore on) and
-# input_boolean.oven_timer_ringing, both live-only helpers. Two callers:
-#   - custom:kitchen-timer-card on the unifi-connect dashboard (relay pattern: the card calls this
-#     script with {command, payload}; it works for the non-admin display user, fire_event would not);
-#   - automation.voice_oven_timer_sentences (kitchen voice), which speaks the `response` this returns.
-# Commands (payload is a JSON object string; only start and add read it):
-#   start {seconds}  start or restart the timer, ringing off
-#   add {seconds}    add time; restarts with a longer duration and moves the end, so the card's
-#                    progress bar stays right (timer.change alone refuses to go past the duration
-#                    the timer started with). While ringing, add starts a fresh timer ("5 more minutes").
-#   cancel | stop    clear everything: timer cancelled, ringing off
-#   status           read only
-# Ringing on, the Voice PE announcement and the 10-minute ring cap live in
-# automation.oven_timer_ring_and_announce.
+# script.kitchen_timer_relay (UI script, pushed live through the HA config API). hass-sandbox #262, #266.
+# The one place that changes the kitchen timers. Up to three run at once, one slot each:
+#   timer.kitchen_timer_N (restore on), input_text.kitchen_timer_N_name, input_boolean.kitchen_timer_N_ringing
+# (N = 1..3, live-only helpers in area Kitchen). Callers:
+#   - custom:kitchen-timer-card on the unifi-connect dashboard: add / cancel / stop with {slot}
+#     (relay pattern; works for the non-admin display user, fire_event would not);
+#   - script.kitchen_timer_voice (kitchen voice, through the KitchenTimer intent), which speaks `response`;
+#   - automation.kitchen_timer_ring_and_announce: ring / expire / reset.
+# Payload (JSON object string): slot (1-3, card), name (spoken label, voice), seconds, match_seconds
+# ("the five minute timer").
+# Commands:
+#   start {seconds, name?}  a free slot (a done-and-ringing one if none is free). A stated name that is already
+#                           busy restarts that timer. No name: "Timer", then "Timer 2", "Timer 3".
+#                           Three running: a short refusal.
+#   add / subtract {seconds, slot | name?}  moves the end: restarts with a longer (shorter) duration, then moves
+#                           the end back, so the card's progress bar keeps its place (timer.change alone refuses to
+#                           go past the duration the timer started with). Paused stays paused. add on a timer that
+#                           is done and ringing starts it again ("add five minutes").
+#   cancel {slot | name?}   one timer. Several and no name: lists them and asks the speaker to name one.
+#   cancel_all              every timer.
+#   stop {slot | name?}     silences what is ringing; with nothing ringing it acts as cancel.
+#   status {name?}          one timer, or all of them.
+#   pause / resume {name?}  one timer, or all of them.
+#   ring {slot}             ringing on; returns the announcement ("Pasta timer is done.").
+#   expire {slot}           ringing off (the 10-minute cap).
+#   reset                   ringing off everywhere and stale names cleared (HA start).
+# A slot is busy while its timer is active or paused, or while it rings. Its name is cleared when it goes idle.
+# No name and several timers: "add" goes to the one timer that is done and ringing ("five more minutes"); a lone
+# plain "Timer" among named ones ("pasta") is "the timer"; otherwise the reply asks which one. "Timer one" / "the
+# first timer" also reach the plain "Timer".
 alias: Kitchen timer relay
-description: 'Oven timer commands from the kitchen display card and kitchen voice (hass-sandbox #262):
-  start, add, cancel, stop, status. Changes only timer.oven and input_boolean.oven_timer_ringing and returns
-  a short spoken reply in `response`.'
+description: >-
+  Kitchen display timers (hass-sandbox #262, #266): up to three named timers in timer.kitchen_timer_1..3
+  with input_text.kitchen_timer_N_name and input_boolean.kitchen_timer_N_ringing. Called by the
+  kitchen-timer-card, script.kitchen_timer_voice and the ring automation; returns a short spoken reply in
+  `response`.
 icon: mdi:timer-cog-outline
 mode: queued
-max: 10
+max: 20
 fields:
   command:
     name: Command
-    description: start, add, cancel, stop or status
+    description: start, add, subtract, cancel, cancel_all, stop, status, pause, resume, ring, expire or reset
     required: true
     selector:
-      select:
-        options:
-        - start
-        - add
-        - cancel
-        - stop
-        - status
+      text: {}
   payload:
     name: Payload
-    description: 'JSON object string, for example {"seconds": 300}. Used by start and add.'
+    description: 'JSON object string, for example {"seconds": 300, "name": "pasta"} or {"slot": 2}.'
     selector:
       text: {}
 sequence:
-- alias: Read the request and the timer. HA trims each rendered variable; the replies are built in one dict.
-  variables:
-    cmd: '{{ command | default('''', true) | string | lower | trim }}'
-    seconds: '{% set p = payload | default(''{}'', true) %}{% if p is string %}{% set p = p | from_json(default={})
-      %}{% endif %}{{ ((p.get(''seconds'', 0) if p is mapping else 0) | float(0)) | round(0) | int }}'
-    st: '{{ states(''timer.oven'') }}'
-    ringing: '{{ is_state(''input_boolean.oven_timer_ringing'', ''on'') }}'
-    total: '{{ as_timedelta(state_attr(''timer.oven'', ''duration'') | default(''0:00:00'', true) | string).total_seconds()
-      | int(0) }}'
-    left: '{% if st == ''active'' and state_attr(''timer.oven'', ''finishes_at'') %}{{ [((as_datetime(state_attr(''timer.oven'',
-      ''finishes_at'')) - now()).total_seconds()) | round(0) | int, 0] | max }}{% elif st == ''paused'' %}{{
-      as_timedelta(state_attr(''timer.oven'', ''remaining'') | default(''0:00:00'', true) | string).total_seconds()
-      | int(0) }}{% else %}0{% endif %}'
-    say: '{%- macro say(s) -%}{%- set s = s | int(0) -%}{%- set h = s // 3600 -%}{%- set m = (s % 3600) // 60
-      -%}{%- set x = s % 60 -%}{%- set ns = namespace(p=[]) -%}{%- if h %}{% set ns.p = ns.p + [h ~ ('' hour''
-      if h == 1 else '' hours'')] %}{% endif -%}{%- if m %}{% set ns.p = ns.p + [m ~ ('' minute'' if m == 1
-      else '' minutes'')] %}{% endif -%}{%- if x or not ns.p %}{% set ns.p = ns.p + [x ~ ('' second'' if x
-      == 1 else '' seconds'')] %}{% endif -%}{{- (ns.p[:-1] | join('', '') ~ '' and '' ~ ns.p[-1]) if ns.p
-      | count > 1 else ns.p[0] -}}{%- endmacro -%}{%- set l = left | int(0) -%}{%- set l_said = ((l + 30) //
-      60 * 60) if l >= 600 else l -%}{{ {''amount'': say(seconds), ''left'': (''about '' if l >= 600 else '''')
-      ~ say(l_said), ''after_add'': (''about '' if l + seconds >= 600 else '''') ~ say(((l + seconds + 30) // 60 *
-      60) if l + seconds >= 600 else l + seconds)} }}'
-    max_seconds: 43200
-    not_caught: 'I didn''t catch how long. Say, for example, set the oven timer for ten minutes.'
-    too_long: The oven timer can run for up to 12 hours.
-    none_running: There's no oven timer running.
-    result:
-      response: ''
-- choose:
-  - alias: start
-    conditions:
-    - condition: template
-      value_template: '{{ cmd == ''start'' }}'
-    sequence:
-    - if:
-      - condition: template
-        value_template: '{{ seconds <= 0 or seconds > max_seconds }}'
-      then:
-      - variables:
-          result:
-            response: '{{ not_caught if seconds <= 0 else too_long }}'
-      - stop: Length not usable
-        response_variable: result
-    - action: input_boolean.turn_off
-      target:
-        entity_id: input_boolean.oven_timer_ringing
-    - action: timer.start
-      target:
-        entity_id: timer.oven
-      data:
-        duration: '{{ seconds }}'
-    - variables:
-        result:
-          response: Oven timer set for {{ say.amount }}.
-  - alias: add
-    conditions:
-    - condition: template
-      value_template: '{{ cmd == ''add'' }}'
-    sequence:
-    - if:
-      - condition: template
-        value_template: '{{ seconds <= 0 or (left | int(0)) + seconds > max_seconds }}'
-      then:
-      - variables:
-          result:
-            response: '{{ not_caught if seconds <= 0 else too_long }}'
-      - stop: Length not usable
-        response_variable: result
-    - choose:
-      - alias: Running or paused. Restart with the longer duration, then move the end back by the time already
-          run, so remaining = left + seconds and the progress bar keeps its place. Paused stays paused.
-        conditions:
-        - condition: state
-          entity_id: timer.oven
-          state:
-          - active
-          - paused
-        sequence:
-        - alias: In case the timer ran out between reading it and here (ringing would stay on beside a running timer)
-          action: input_boolean.turn_off
-          target:
-            entity_id: input_boolean.oven_timer_ringing
-        - action: timer.start
-          target:
-            entity_id: timer.oven
-          data:
-            duration: '{{ total + seconds }}'
-        - if:
-          - condition: template
-            value_template: '{{ total - (left | int(0)) > 0 }}'
-          then:
-          - action: timer.change
-            target:
-              entity_id: timer.oven
-            data:
-              duration: '{{ (left | int(0)) - total }}'
-        - if:
-          - condition: template
-            value_template: '{{ st == ''paused'' }}'
-          then:
-          - action: timer.pause
-            target:
-              entity_id: timer.oven
-        - variables:
-            result:
-              response: Added {{ say.amount }}. {{ 'The oven timer is paused with ' ~ say.after_add ~ ' left.'
-                if st == 'paused' else say.after_add[:1] | upper ~ say.after_add[1:] ~ ' left.' }}
-      - alias: Ringing. "Five more minutes" starts a fresh timer.
-        conditions:
-        - condition: template
-          value_template: '{{ ringing }}'
-        sequence:
-        - action: input_boolean.turn_off
-          target:
-            entity_id: input_boolean.oven_timer_ringing
-        - action: timer.start
-          target:
-            entity_id: timer.oven
-          data:
-            duration: '{{ seconds }}'
-        - variables:
-            result:
-              response: Oven timer set for {{ say.amount }}.
-      default:
-      - variables:
-          result:
-            response: '{{ none_running }}'
-  - alias: cancel or stop (both clear everything)
-    conditions:
-    - condition: template
-      value_template: '{{ cmd in [''cancel'', ''stop''] }}'
-    sequence:
-    - variables:
-        result:
-          response: '{{ ''Oven timer canceled.'' if st in [''active'', ''paused''] else (''Oven timer stopped.''
-            if ringing else none_running) }}'
-    - action: timer.cancel
-      target:
-        entity_id: timer.oven
-    - action: input_boolean.turn_off
-      target:
-        entity_id: input_boolean.oven_timer_ringing
-  - alias: status
-    conditions:
-    - condition: template
-      value_template: '{{ cmd == ''status'' }}'
-    sequence:
-    - variables:
-        result:
-          response: '{% if ringing %}The oven timer is done.{% elif st == ''active'' %}{{ say.left[:1] | upper
-            }}{{ say.left[1:] }} left on the oven timer.{% elif st == ''paused'' %}The oven timer is paused with
-            {{ say.left }} left.{% else %}{{ none_running }}{% endif %}'
-  default:
-  - variables:
+  - alias: Read the request and the three slots
+    variables:
+      cmd: "{{ command | default('', true) | string | lower | trim }}"
+      p: |-
+        {%- set p = payload | default('{}', true) -%}
+        {%- if p is string -%}{%- set p = p | from_json(default={}) -%}{%- endif -%}
+        {{- p if p is mapping else {} -}}
+      req_slot: "{% set s = p.get('slot', 0) | int(0) %}{{ s if s in [1, 2, 3] else 0 }}"
+      req_secs: "{{ (p.get('seconds', 0) | float(0)) | round(0) | int }}"
+      req_match_secs: "{{ (p.get('match_seconds', 0) | float(0)) | round(0) | int }}"
+      req_key: |-
+        {#- The spoken label as a lookup key: lower case, no articles, no trailing "timer". -#}
+        {%- set k = ' ' ~ (p.get('name', '') | string | lower | regex_replace("[^a-z0-9' ]+", ' ')) ~ ' ' -%}
+        {%- set k = k | regex_replace('^\\s*(?:(?:the|a|an|my|our|that|this)\\s+)+', '')
+              | regex_replace('(?:\\s+(?:timers?|countdowns?))+\\s*$', '') | regex_replace('\\s+', ' ') | trim -%}
+        {%- if k is match('^(?:timer )?(?:one|1|1st|first)$') -%}{%- set k = 'timer 1' -%}
+        {%- elif k is match('^(?:timer )?(?:two|2|2nd|second)$') -%}{%- set k = 'timer 2' -%}
+        {%- elif k is match('^(?:timer )?(?:three|3|3rd|third)$') -%}{%- set k = 'timer 3' -%}{%- endif -%}
+        {%- set generic = ['timer', 'countdown', 'kitchen', 'kitchen display', 'display', 'new', 'another', 'other',
+              'regular', 'normal', 'quick', 'one more', 'extra'] -%}
+        {{- '' if k in generic else k[:30] | trim -}}
+      max_seconds: 43200
+      slots: |-
+        {%- macro say(s) -%}
+          {%- set s = s | int(0) -%}{%- set h = s // 3600 -%}{%- set m = (s % 3600) // 60 -%}{%- set x = s % 60 -%}
+          {%- set ns = namespace(p=[]) -%}
+          {%- if h -%}{%- set ns.p = ns.p + [h ~ (' hour' if h == 1 else ' hours')] -%}{%- endif -%}
+          {%- if m -%}{%- set ns.p = ns.p + [m ~ (' minute' if m == 1 else ' minutes')] -%}{%- endif -%}
+          {%- if x or not ns.p -%}{%- set ns.p = ns.p + [x ~ (' second' if x == 1 else ' seconds')] -%}{%- endif -%}
+          {{- (ns.p[:-1] | join(', ') ~ ' and ' ~ ns.p[-1]) if ns.p | count > 1 else ns.p[0] -}}
+        {%- endmacro -%}
+        {#- Exact under 2 minutes, to the half minute under 10, to the minute from 10. -#}
+        {%- macro about(l) -%}
+          {%- set l = [l | int(0), 0] | max -%}
+          {%- set r = l if l < 120 else (((l + 15) // 30 * 30) if l < 600 else ((l + 30) // 60 * 60)) -%}
+          {{- ('about ' if r != l else '') ~ say(r) -}}
+        {%- endmacro -%}
+        {%- set ns = namespace(l=[]) -%}
+        {%- for i in [1, 2, 3] -%}
+          {%- set t = 'timer.kitchen_timer_' ~ i -%}
+          {%- set st = states(t) -%}
+          {%- set ring = is_state('input_boolean.kitchen_timer_' ~ i ~ '_ringing', 'on') -%}
+          {%- set nm = states('input_text.kitchen_timer_' ~ i ~ '_name') | trim -%}
+          {%- set nm = nm if nm not in ['', 'unknown', 'unavailable'] else 'Timer ' ~ i -%}
+          {%- set total = as_timedelta(state_attr(t, 'duration') | default('0:00:00', true) | string).total_seconds() | int(0) -%}
+          {%- set fin = state_attr(t, 'finishes_at') -%}
+          {%- if st == 'active' and fin -%}
+            {%- set left = [((as_datetime(fin) - now()).total_seconds()) | round(0) | int, 0] | max -%}
+          {%- elif st == 'paused' -%}
+            {%- set left = as_timedelta(state_attr(t, 'remaining') | default('0:00:00', true) | string).total_seconds() | int(0) -%}
+          {%- else -%}
+            {%- set left = 0 -%}
+          {%- endif -%}
+          {%- set run = st in ['active', 'paused'] -%}
+          {%- set plain = nm == 'Timer' -%}
+          {%- set num = nm is match('^Timer \\d+$') -%}
+          {%- set the = 'the timer' if plain else (nm if num else 'the ' ~ (nm | lower) ~ ' timer') -%}
+          {%- set ab = about(left) -%}
+          {%- set ns.l = ns.l + [{
+                'slot': i, 'st': st, 'ringing': ring, 'running': run, 'busy': ring or run,
+                'name': nm, 'key': nm | lower, 'left': left, 'total': total, 'left_said': ab,
+                'head': 'Timer' if plain else (nm if num else nm ~ ' timer'),
+                'the': the,
+                'The': the[:1] | upper ~ the[1:],
+                'addr': 'timer one' if plain else the,
+                'item': ('the timer' if plain else (nm if num else nm | lower))
+                        ~ (' is paused with ' ~ ab ~ ' left' if st == 'paused' else (' has ' ~ ab ~ ' left' if run else ' is done')),
+                'one': (the[:1] | upper ~ the[1:] ~ ' is paused with ' ~ ab ~ ' left.') if st == 'paused'
+                       else ((ab[:1] | upper ~ ab[1:] ~ ' left on ' ~ the ~ '.') if run else (the[:1] | upper ~ the[1:] ~ ' is done.')),
+                'announce': 'The timer is done.' if plain else (nm ~ ' is done.' if num else nm ~ ' timer is done.')}] -%}
+        {%- endfor -%}
+        {{- ns.l -}}
+      say_req: |-
+        {%- set s = req_secs | int(0) -%}{%- set h = s // 3600 -%}{%- set m = (s % 3600) // 60 -%}{%- set x = s % 60 -%}
+        {%- set ns = namespace(p=[]) -%}
+        {%- if h -%}{%- set ns.p = ns.p + [h ~ (' hour' if h == 1 else ' hours')] -%}{%- endif -%}
+        {%- if m -%}{%- set ns.p = ns.p + [m ~ (' minute' if m == 1 else ' minutes')] -%}{%- endif -%}
+        {%- if x or not ns.p -%}{%- set ns.p = ns.p + [x ~ (' second' if x == 1 else ' seconds')] -%}{%- endif -%}
+        {{- (ns.p[:-1] | join(', ') ~ ' and ' ~ ns.p[-1]) if ns.p | count > 1 else ns.p[0] -}}
       result:
-        response: 'Unknown oven timer command: {{ cmd }}.'
-- stop: Done
-  response_variable: result
+        response: ""
+  - alias: Which timers the request is about
+    variables:
+      busy: "{{ slots | selectattr('busy') | list }}"
+      busy_said: |-
+        {%- set w = slots | selectattr('busy') | map(attribute='item') | map('regex_replace', ' (is|has) .*$', '') | list -%}
+        {{- (w[:-1] | join(', ') ~ ' and ' ~ w[-1]) if w | count > 1 else (w | first | default('')) -}}
+      count_word: "{{ {1: 'one', 2: 'two', 3: 'three'}.get(slots | selectattr('busy') | list | count, 'no') }}"
+      named: "{{ req_slot > 0 or req_key != '' or req_match_secs > 0 }}"
+      matches: |-
+        {%- set b = slots | selectattr('busy') | list -%}
+        {%- if req_slot -%}
+          {{- b | selectattr('slot', 'eq', req_slot) | list -}}
+        {%- elif req_key -%}
+          {%- set exact = b | selectattr('key', 'eq', req_key) | list -%}
+          {%- if not exact and req_key == 'timer 1' -%}{%- set exact = b | selectattr('key', 'eq', 'timer') | list -%}{%- endif -%}
+          {%- if exact -%}
+            {{- exact -}}
+          {%- else -%}
+            {%- set ns = namespace(l=[]) -%}
+            {%- for s in b if s.key in req_key or req_key in s.key -%}{%- set ns.l = ns.l + [s] -%}{%- endfor -%}
+            {{- ns.l -}}
+          {%- endif -%}
+        {%- elif req_match_secs -%}
+          {{- b | selectattr('total', 'eq', req_match_secs) | list -}}
+        {%- else -%}
+          {#- No name and several timers: "five more minutes" goes to the one that just rang; otherwise a lone plain
+              "Timer" among named timers is "the timer" (except for status, which lists all). -#}
+          {%- set rang = b | selectattr('ringing') | rejectattr('running') | list -%}
+          {%- set plain = b | selectattr('key', 'eq', 'timer') | list -%}
+          {%- set numbered = b | selectattr('key', 'match', '^timer \\d+$') | list -%}
+          {%- if cmd == 'add' and b | count > 1 and rang | count == 1 -%}{{- rang -}}
+          {%- elif cmd != 'status' and b | count > 1 and plain | count == 1 and not numbered -%}{{- plain -}}
+          {%- else -%}{{- b -}}{%- endif -%}
+        {%- endif -%}
+      none_running: No kitchen timers are running.
+      not_caught: I didn't catch how long. Say, for example, set a pasta timer for ten minutes.
+      too_long: A kitchen timer can run for up to 12 hours.
+      missing: >-
+        There's no {{ 'timer like that' if not req_key else (req_key if req_key.startswith('timer ') else req_key ~ ' timer') }}.{{
+        ' You have ' ~ busy_said ~ '.' if busy_said else '' }}
+      which: >-
+        You have {{ count_word }} timers, {{ busy_said }}. Say which one, for example
+  - choose:
+      - alias: start
+        conditions:
+          - condition: template
+            value_template: "{{ cmd == 'start' }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ req_secs <= 0 or req_secs > max_seconds }}"
+            then:
+              - variables:
+                  result:
+                    response: "{{ not_caught if req_secs <= 0 else too_long }}"
+              - stop: Length not usable
+                response_variable: result
+          - variables:
+              new_name: "{{ '' if req_key is match('^timer [123]$') else (req_key[:1] | upper ~ req_key[1:]) }}"
+              same: >-
+                {{ (busy | selectattr('key', 'eq', new_name | lower) | map(attribute='slot') | first | default(0)) if new_name else 0 }}
+              free: >-
+                {{ slots | rejectattr('busy') | map(attribute='slot') | first
+                   | default(slots | rejectattr('running') | map(attribute='slot') | first | default(0)) }}
+              slot: "{{ same or free }}"
+              keys: "{{ busy | rejectattr('slot', 'eq', same or free) | map(attribute='key') | list }}"
+              name: |-
+                {%- if new_name -%}{{ new_name }}
+                {%- elif 'timer' not in keys -%}Timer
+                {%- else -%}{{ ['Timer 2', 'Timer 3', 'Timer 4'] | reject('in', keys | map('title') | list) | first }}
+                {%- endif -%}
+          - if:
+              - condition: template
+                value_template: "{{ slot == 0 }}"
+            then:
+              - variables:
+                  result:
+                    response: The kitchen already has three timers running, {{ busy_said }}. Cancel one first.
+              - stop: All three slots are running
+                response_variable: result
+          - action: input_text.set_value
+            target:
+              entity_id: input_text.kitchen_timer_{{ slot }}_name
+            data:
+              value: "{{ name }}"
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.kitchen_timer_{{ slot }}_ringing
+          - action: timer.start
+            target:
+              entity_id: timer.kitchen_timer_{{ slot }}
+            data:
+              duration: "{{ req_secs }}"
+          - variables:
+              result:
+                response: >-
+                  {{ 'Timer' if name == 'Timer' else (name if name is match('^Timer \\d+$') else name ~ ' timer') }} set
+                  for {{ say_req }}.
+      - alias: add or subtract
+        conditions:
+          - condition: template
+            value_template: "{{ cmd in ['add', 'subtract'] }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ req_secs <= 0 }}"
+            then:
+              - variables:
+                  result:
+                    response: I didn't catch how much. Say, for example, add five minutes to the pasta timer.
+              - stop: Amount not usable
+                response_variable: result
+          - if:
+              - condition: template
+                value_template: "{{ matches | count != 1 }}"
+            then:
+              - variables:
+                  result:
+                    response: >-
+                      {{ none_running if not busy else (missing if not matches else which ~ ' '
+                      ~ ('add five minutes to ' if cmd == 'add' else 'take a minute off ') ~ busy[0].addr ~ '.') }}
+              - stop: No single target
+                response_variable: result
+          - variables:
+              t: "{{ matches[0] }}"
+              delta: "{{ req_secs if cmd == 'add' else 0 - req_secs }}"
+          - choose:
+              - alias: Done and ringing. "Add five minutes" starts it again; there is nothing to take off.
+                conditions:
+                  - condition: template
+                    value_template: "{{ not t.running }}"
+                sequence:
+                  - if:
+                      - condition: template
+                        value_template: "{{ cmd == 'add' }}"
+                    then:
+                      - action: input_boolean.turn_off
+                        target:
+                          entity_id: input_boolean.kitchen_timer_{{ t.slot }}_ringing
+                      - action: timer.start
+                        target:
+                          entity_id: timer.kitchen_timer_{{ t.slot }}
+                        data:
+                          duration: "{{ req_secs }}"
+                      - variables:
+                          result:
+                            response: "{{ t.head }} set for {{ say_req }}."
+                    else:
+                      - variables:
+                          result:
+                            response: "{{ t.one }}"
+              - alias: Not enough left to take off
+                conditions:
+                  - condition: template
+                    value_template: "{{ t.left + delta < 5 }}"
+                sequence:
+                  - variables:
+                      result:
+                        response: "{{ t.The }} only has {{ t.left_said }} left."
+              - alias: Too long
+                conditions:
+                  - condition: template
+                    value_template: "{{ t.left + delta > max_seconds }}"
+                sequence:
+                  - variables:
+                      result:
+                        response: "{{ too_long }}"
+            default:
+              - variables:
+                  new_left: "{{ t.left + delta }}"
+                  new_total: "{{ [t.total + delta, t.left + delta] | max }}"
+              - alias: >-
+                  Restart with the new duration, then move the end back by the time already run (remaining = left +
+                  delta, progress bar in place). Paused stays paused.
+                action: timer.start
+                target:
+                  entity_id: timer.kitchen_timer_{{ t.slot }}
+                data:
+                  duration: "{{ new_total }}"
+              - if:
+                  - condition: template
+                    value_template: "{{ new_total > new_left }}"
+                then:
+                  - action: timer.change
+                    target:
+                      entity_id: timer.kitchen_timer_{{ t.slot }}
+                    data:
+                      duration: "{{ new_left - new_total }}"
+              - if:
+                  - condition: template
+                    value_template: "{{ t.st == 'paused' }}"
+                then:
+                  - action: timer.pause
+                    target:
+                      entity_id: timer.kitchen_timer_{{ t.slot }}
+              - alias: In case it ran out between reading it and here (ringing would stay on beside a running timer)
+                action: input_boolean.turn_off
+                target:
+                  entity_id: input_boolean.kitchen_timer_{{ t.slot }}_ringing
+              - variables:
+                  after: |-
+                    {%- set l = [new_left | int(0), 0] | max -%}
+                    {%- set r = l if l < 120 else (((l + 15) // 30 * 30) if l < 600 else ((l + 30) // 60 * 60)) -%}
+                    {%- set h = r // 3600 -%}{%- set m = (r % 3600) // 60 -%}{%- set x = r % 60 -%}
+                    {%- set ns = namespace(p=[]) -%}
+                    {%- if h -%}{%- set ns.p = ns.p + [h ~ (' hour' if h == 1 else ' hours')] -%}{%- endif -%}
+                    {%- if m -%}{%- set ns.p = ns.p + [m ~ (' minute' if m == 1 else ' minutes')] -%}{%- endif -%}
+                    {%- if x or not ns.p -%}{%- set ns.p = ns.p + [x ~ (' second' if x == 1 else ' seconds')] -%}{%- endif -%}
+                    {{- ('about ' if r != l else '') ~ ((ns.p[:-1] | join(', ') ~ ' and ' ~ ns.p[-1]) if ns.p | count > 1 else ns.p[0]) -}}
+                  result:
+                    response: >-
+                      {{ ('Added ' ~ say_req ~ ' to ') if cmd == 'add' else ('Took ' ~ say_req ~ ' off ') }}{{ t.the }}.
+                      {{ ('It is paused with ' ~ after ~ ' left.') if t.st == 'paused' else (after[:1] | upper ~ after[1:] ~ ' left.') }}
+      - alias: cancel, or stop with nothing ringing
+        conditions:
+          - condition: template
+            value_template: >-
+              {{ cmd == 'cancel' or (cmd == 'stop' and not (matches if named else busy) | selectattr('ringing') | list) }}
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ matches | count != 1 }}"
+            then:
+              - variables:
+                  result:
+                    response: >-
+                      {{ none_running if not busy else (missing if not matches else which ~ ' cancel ' ~ busy[0].addr
+                      ~ ', or say cancel all timers.') }}
+              - stop: No single target
+                response_variable: result
+          - variables:
+              t: "{{ matches[0] }}"
+          - action: timer.cancel
+            target:
+              entity_id: timer.kitchen_timer_{{ t.slot }}
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.kitchen_timer_{{ t.slot }}_ringing
+          - action: input_text.set_value
+            target:
+              entity_id: input_text.kitchen_timer_{{ t.slot }}_name
+            data:
+              value: ""
+          - variables:
+              result:
+                response: "{{ t.head }} {{ 'canceled' if t.running else 'stopped' }}."
+      - alias: stop with something ringing (silences only the ringing ones)
+        conditions:
+          - condition: template
+            value_template: "{{ cmd == 'stop' }}"
+        sequence:
+          - variables:
+              hit: "{{ (matches if named else busy) | selectattr('ringing') | list }}"
+          - repeat:
+              for_each: "{{ hit | map(attribute='slot') | list }}"
+              sequence:
+                - action: input_boolean.turn_off
+                  target:
+                    entity_id: input_boolean.kitchen_timer_{{ repeat.item }}_ringing
+                - if:
+                    - condition: template
+                      value_template: "{{ not (hit | selectattr('slot', 'eq', repeat.item) | first).running }}"
+                  then:
+                    - action: input_text.set_value
+                      target:
+                        entity_id: input_text.kitchen_timer_{{ repeat.item }}_name
+                      data:
+                        value: ""
+          - variables:
+              result:
+                response: "{{ (hit[0].head ~ ' stopped.') if hit | count == 1 else 'Timers stopped.' }}"
+      - alias: cancel_all
+        conditions:
+          - condition: template
+            value_template: "{{ cmd == 'cancel_all' }}"
+        sequence:
+          - repeat:
+              for_each: "{{ busy | map(attribute='slot') | list }}"
+              sequence:
+                - action: timer.cancel
+                  target:
+                    entity_id: timer.kitchen_timer_{{ repeat.item }}
+                - action: input_boolean.turn_off
+                  target:
+                    entity_id: input_boolean.kitchen_timer_{{ repeat.item }}_ringing
+                - action: input_text.set_value
+                  target:
+                    entity_id: input_text.kitchen_timer_{{ repeat.item }}_name
+                  data:
+                    value: ""
+          - variables:
+              result:
+                response: >-
+                  {{ none_running if not busy else (busy[0].head ~ ' canceled.' if busy | count == 1
+                  else ('Both timers canceled.' if busy | count == 2 else 'All three timers canceled.')) }}
+      - alias: status
+        conditions:
+          - condition: template
+            value_template: "{{ cmd == 'status' }}"
+        sequence:
+          - variables:
+              result:
+                response: |-
+                  {%- set l = matches -%}
+                  {%- if not busy -%}{{ none_running }}
+                  {%- elif not l -%}{{ missing }}
+                  {%- elif l | count == 1 -%}{{ l[0].one }}
+                  {%- else -%}
+                    {%- set w = l | map(attribute='item') | list -%}
+                    {%- set s = (w[:-1] | join(', ') ~ ', and ' ~ w[-1]) if w | count > 2 else w | join(' and ') -%}
+                    {{- {2: 'Two', 3: 'Three'}[l | count] }} timers. {{ s[:1] | upper ~ s[1:] }}.
+                  {%- endif -%}
+      - alias: pause or resume (one timer, or every one when none is named)
+        conditions:
+          - condition: template
+            value_template: "{{ cmd in ['pause', 'resume'] }}"
+        sequence:
+          - variables:
+              hit: "{{ matches | selectattr('st', 'eq', 'active' if cmd == 'pause' else 'paused') | list }}"
+          - repeat:
+              for_each: "{{ hit | map(attribute='slot') | list }}"
+              sequence:
+                - if:
+                    - condition: template
+                      value_template: "{{ cmd == 'pause' }}"
+                  then:
+                    - action: timer.pause
+                      target:
+                        entity_id: timer.kitchen_timer_{{ repeat.item }}
+                  else:
+                    - action: timer.start
+                      target:
+                        entity_id: timer.kitchen_timer_{{ repeat.item }}
+          - variables:
+              result:
+                response: |-
+                  {%- if not busy -%}{{ none_running }}
+                  {%- elif not matches -%}{{ missing }}
+                  {%- elif not hit -%}
+                    {{- ('Nothing to ' ~ cmd ~ '.') if matches | count > 1 else (matches[0].The ~ ' is '
+                        ~ ('already paused.' if matches[0].st == 'paused' else ('already running.' if matches[0].running else 'done.'))) -}}
+                  {%- elif hit | count == 1 -%}{{ hit[0].head }} {{ cmd }}d.
+                  {%- else -%}{{ 'Paused ' if cmd == 'pause' else 'Resumed ' }}{{ hit | count }} timers.
+                  {%- endif -%}
+      - alias: ring (from the ring automation)
+        conditions:
+          - condition: template
+            value_template: "{{ cmd == 'ring' and req_slot > 0 }}"
+        sequence:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.kitchen_timer_{{ req_slot }}_ringing
+          - variables:
+              result:
+                response: "{{ (slots | selectattr('slot', 'eq', req_slot) | first).announce }}"
+      - alias: expire (the 10-minute ring cap) and reset (HA start)
+        conditions:
+          - condition: template
+            value_template: "{{ cmd in ['expire', 'reset'] }}"
+        sequence:
+          - repeat:
+              for_each: "{{ [req_slot] if cmd == 'expire' and req_slot > 0 else [1, 2, 3] }}"
+              sequence:
+                - action: input_boolean.turn_off
+                  target:
+                    entity_id: input_boolean.kitchen_timer_{{ repeat.item }}_ringing
+                - if:
+                    - condition: template
+                      value_template: "{{ not (slots | selectattr('slot', 'eq', repeat.item) | first).running }}"
+                  then:
+                    - action: input_text.set_value
+                      target:
+                        entity_id: input_text.kitchen_timer_{{ repeat.item }}_name
+                      data:
+                        value: ""
+          - variables:
+              result:
+                response: Ringing cleared.
+    default:
+      - variables:
+          result:
+            response: "Unknown kitchen timer command: {{ cmd }}."
+  - stop: Done
+    response_variable: result

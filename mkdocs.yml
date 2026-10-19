@@ -51,7 +51,7 @@ nav:
       - Vestaboard: features/vestaboard.md
       - System Health Monitoring: features/health-checks.md
       - Media Dashboard: features/media-dashboard.md
-      - Kitchen Oven Timer: features/kitchen-timer.md
+      - Kitchen Timers: features/kitchen-timer.md
   - Architecture:
       - Overview: architecture/overview.md
       - AppDaemon Apps: apps/index.md

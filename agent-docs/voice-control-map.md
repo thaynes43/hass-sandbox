@@ -32,29 +32,36 @@ wall switches and scene controllers already give people, and must not fight the 
   Kitchen agent said "tomorrow, Friday, October ninth" over Thursday's menu, 1 run in 3. The agents
   have no date in their prompts, and the agent apparently took `date` for today's date, which is
   what `GetDateTime` returns under that key.
-- **Oven timer = `timer.oven` on the kitchen Connect display (2026-10-18, #262; replaces the Voice
-  PE "oven" timer of #255/#259).** `automation.voice_oven_timer_sentences` (sentence triggers, so it
-  runs before the built-in timer intents and before any agent, on every pipeline) catches "set the /
-  an oven timer for N", "set a N minute oven timer", "set a timer for the oven for N", "add N to the
-  oven timer", "how long / how much time is left on the oven timer", "what is left on the oven
-  timer", "is there an oven timer running", and "cancel / stop / turn off the oven timer". Each goes to
-  `script.kitchen_timer_relay` (the same script the display card calls), which answers in one short
-  sentence ("Oven timer set for 35 minutes.", "About 12 minutes left on the oven timer.", "Oven timer
-  canceled.", "There's no oven timer running."). Spoken numbers ("thirty-five") are parsed by the
-  automation; anything it can't read gets "I didn't catch how long", never a guessed length. Cancel
-  and stop both clear everything (timer and ring). When it runs out,
-  `automation.oven_timer_ring_and_announce` turns `input_boolean.oven_timer_ringing` on (the kitchen
-  display's card goes amber and chimes every 5 s until a tap, "stop the oven timer", or 10 minutes)
-  and the kitchen Voice PE announces "Oven timer is done." once. Plain "set a timer for N" and named
-  timers ("pasta") have no "oven", match nothing here and stay Voice PE built-in timers. The shared
-  agent prompt still says ovens are not available by voice; that is right, because no oven phrase
-  reaches an agent. **Not the oven itself:** `ge_home.set_timer` writes ERD 0x5105, which this Café
-  CTD90FP4N4W2 counts down but never draws on its LCD (#255), and Cook Time starts a timed bake
-  (declined, `backlog/010-oven-cook-time-by-voice-declined.md`). Never call `ge_home.*` for a timer.
-  Display side and test recipe: `agent-docs/kitchen-connect-display.md`. Bench (text as the Kitchen
-  satellite, 2026-10-18): every phrase above answered locally in under 0.1 s. End to end the same
-  evening Tom heard the display chime and the announcement, and one tap stopped it. Not yet spoken by Tom.
-
+- **Kitchen timers = up to three named display timers, kitchen satellite only (2026-10-18, #266;
+  #262 had one "oven timer").** In the kitchen, every timer or countdown request goes to the kitchen
+  Connect display's timers: `custom_sentences/en/kitchen_timers.yaml` (every block has
+  `requires_context: area: Kitchen`) → intent `KitchenTimer` → `intent_script` in
+  `packages/kitchen_timer.yaml` → `script.kitchen_timer_voice` (parses lengths and names) →
+  `script.kitchen_timer_relay` (the same script the display card calls), whose one-sentence reply is
+  spoken. Covered: set ("set a timer for N", "set a pasta timer for N", "set the oven timer for N",
+  "start a N minute countdown", "N minute timer", "set a timer for N named X"), add ("add N to the pasta
+  timer", "five more minutes", "add another minute"), take off ("take a minute off timer two"), how long is
+  left (one timer by name, or all: "what timers are running", "how much time is left"), cancel ("cancel
+  the pasta timer", "cancel timer two"), cancel all, stop (silences what is ringing; with nothing ringing it
+  cancels), pause and resume. Names: the stated one, else "Timer", "Timer 2", "Timer 3"; a fourth gets
+  "The kitchen already has three timers running, ... Cancel one first." With several timers and no name the
+  reply lists them and gives an example rather than guessing (status lists all). Replies: "Pasta timer set for
+  10 minutes.", "About 12 minutes left on the pasta timer.", "Two timers. Pasta has about 12 minutes left
+  and the timer has 2 minutes left.", "Added 2 minutes to the pasta timer. About 12 minutes left.", "Pasta
+  timer canceled.", "No kitchen timers are running.". Spoken numbers ("thirty-five", "an hour and a half")
+  are parsed by the voice script; anything it can't read gets "I didn't catch how long", never a guessed
+  length. When one runs out, `automation.kitchen_timer_ring_and_announce` turns its ringing helper on (that
+  row of the display card goes amber and the kitchen screen chimes every 5 s until a tap on it, "stop the
+  timer", or 10 minutes) and the kitchen Voice PE announces "Pasta timer is done." once. **Every other room
+  is unchanged:** their satellites are not in the Kitchen area, so these sentences never match and the
+  built-in Voice PE timers answer (benched from Rumpus Room and Movie Room on 2026-10-18). Why custom
+  sentences and not sentence triggers (which cannot be limited to one satellite), and the bench cache trap:
+  `agent-docs/kitchen-connect-display.md`. The intent is hidden from every LLM agent (`platforms` names no
+  real domain), and the nine helpers are not exposed. **Not the oven itself:** `ge_home.set_timer` writes
+  ERD 0x5105, which this Café CTD90FP4N4W2 counts down but never draws on its LCD (#255), and Cook Time starts
+  a timed bake (declined, `backlog/010-oven-cook-time-by-voice-declined.md`). Never call `ge_home.*` for a
+  timer. Bench (text as the Kitchen satellite, 2026-10-18): every phrase above answered locally in under
+  0.15 s. Not yet spoken by Tom.
 ## Basement
 
 | Zone | Off delay | Motion ON | Notes |
@@ -316,8 +323,8 @@ entrance + mudroom + the three bathroom loads off). Both are literal copies of t
 and are allowed by the guard's `script.voice_*` pattern (per-name entries from v1.18.5, the pattern
 since v1.19.2). The **mode** of
 `climate.first_floor_ecobee` ("downstairs": cool / heat / auto / off) goes through
-`script.voice_thermostat` (2026-09-20) — see *Basement*. The wall oven has no voice control: "oven timer" is
-`timer.oven`, shown on the kitchen Connect display (2026-10-18, #262) — see *House-wide mechanisms*.
+`script.voice_thermostat` (2026-09-20) — see *Basement*. The wall oven has no voice control: "oven timer" in the kitchen is one of
+the kitchen display timers (2026-10-18, #262, #266) — see *House-wide mechanisms*.
 
 | Area | Physical controls (mapped buttons only) | Concepts → handle | Ownership / voice caveat |
 |---|---|---|---|

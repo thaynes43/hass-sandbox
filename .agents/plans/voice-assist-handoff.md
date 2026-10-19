@@ -151,15 +151,17 @@ set-temperature intent takes one thermostat only. School lunch questions ("what'
 tomorrow", "what is Jackson having on Friday") go to `script.voice_school_lunch` (2026-09-27,
 read-only). Tested by text on the Kitchen and Phone Assist pipelines; not yet asked out loud. Its
 building helper is private: see `agent-docs/voice-control-map.md` *House-wide mechanisms*.
-"Oven timer" by voice is `timer.oven` (2026-10-18, #262): sentence triggers in
-`automation.voice_oven_timer_sentences` handle set / add / how long is left / cancel / stop locally on
-every pipeline and call `script.kitchen_timer_relay`; the countdown shows in the Disney countdown slot
-of the kitchen Connect display (unifi-connect), which chimes when it runs out, and the kitchen Voice PE
-announces "Oven timer is done." Plain and named timers ("pasta") are still Voice PE built-in timers.
-The Café oven's own timer is never used (#255: a remote 0x5105 write runs hidden on its LCD; Cook Time
-was declined, backlog 010). Bench-tested as the kitchen satellite. End to end on 2026-10-18 (timer
-started by text as the kitchen satellite) Tom saw the countdown, heard the display chime and the Voice
-PE announcement, and one tap silenced it. Not yet done: a set request in Tom's own voice.
+In the kitchen, every timer or countdown request is a kitchen display timer (2026-10-18, #266; #262 had
+one "oven timer"): up to three named timers, shown as rows in the Disney countdown slot of the kitchen
+Connect display (unifi-connect), which chimes for the one that runs out while the kitchen Voice PE
+announces "Pasta timer is done." Kitchen-only by `requires_context: area: Kitchen` in
+`custom_sentences/en/kitchen_timers.yaml` → `intent_script` KitchenTimer (`packages/kitchen_timer.yaml`, the
+one HA restart Tom approved) → `script.kitchen_timer_voice` → `script.kitchen_timer_relay`. Sentence
+triggers could not do this: they match on every satellite and never fall through. Other rooms keep the
+built-in Voice PE timers (benched from Rumpus and Movie Room). The Café oven's own timer is never used
+(#255: a remote 0x5105 write runs hidden on its LCD; Cook Time was declined, backlog 010). Benched as the
+kitchen satellite for every phrasing, plus an audible two-timer test with Tom (#266 PR). Not yet done: a
+request in Tom's own voice.
 Details: the control map, *House-wide mechanisms*, and `agent-docs/kitchen-connect-display.md`.
 
 How music routing works, the patched blueprint, and why the Rumpus KEFs get no special

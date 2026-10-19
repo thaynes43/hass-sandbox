@@ -1,17 +1,19 @@
 # unifi-connect dashboard (the kitchen Connect display, 192.168.0.105), Home view, column 2:
-# views[0].sections[1].cards[4..5]. Live 2026-10-18, hass-sandbox #262. The repo does not mirror the
-# unifi-connect dashboard, so this file records the slot change only; paste it over the countdown card in
-# the dashboard's raw editor (or apply it with ha_config_set_dashboard python_transform).
+# views[0].sections[1].cards[4..5]. Live 2026-10-18, hass-sandbox #262, three timers since #266. The repo does not
+# mirror the unifi-connect dashboard, so this file records the slot change only; paste it over the two cards in the
+# dashboard's raw editor (or apply it with ha_config_set_dashboard python_transform).
 #
-# The Disney countdown and the oven timer share one 440 x 248 slot (both cards are 16:9 at the column
-# width), so the column height and the bottom button row (y=1040 at 1920 x 1080) never move. The two
-# visibility rules are exact complements: countdown while timer.oven is not active/paused and nothing is
-# ringing (also when the timer is unavailable), the timer card otherwise.
+# The Disney countdown and the kitchen timers share one 440 x 248 slot (both cards are 16:9 at the column width), so
+# the column height and the bottom button row (y=1040 at 1920 x 1080) never move. The two visibility rules are exact
+# complements: the countdown while none of timer.kitchen_timer_1..3 is active/paused and nothing rings (also when the
+# helpers are unavailable), the timer card otherwise.
 #
-# chime_ips: the card chimes only on a screen whose own IP (the current HA refresh token's
-# last_used_ip) is listed. The other Connect display (.67) logs in as the same user, so the IP is the only
-# thing that tells them apart. If the kitchen display's IP changes, update this list; the Voice PE still
-# announces either way.
+# Chime gate: the card chimes only on the screen whose own IP (the current HA refresh token's last_used_ip) equals the
+# `ip` attribute of chime_tracker, the kitchen display's UniFi client (tracked by MAC, so a new DHCP lease follows it),
+# or is listed in chime_ips. The other Connect display (.67) logs in as the same user, so the IP is the only thing that
+# tells them apart. The Voice PE announces either way.
+# The card reads timer.kitchen_timer_N, input_text.kitchen_timer_N_name and input_boolean.kitchen_timer_N_ringing for
+# N = 1..3 by default (options slots / timer_prefix / name_prefix / ringing_prefix).
 # Card JS: kitchen-timer-card.js in this folder -> /config/www/kitchen-timer/, resource
 # /local/kitchen-timer/kitchen-timer-card.js?v=N.
 - type: custom:countdown-card
@@ -19,27 +21,58 @@
   navigation_path: /unifi-connect/countdown
   visibility:
   - condition: state
-    entity: timer.oven
+    entity: timer.kitchen_timer_1
     state_not:
     - active
     - paused
   - condition: state
-    entity: input_boolean.oven_timer_ringing
+    entity: timer.kitchen_timer_2
+    state_not:
+    - active
+    - paused
+  - condition: state
+    entity: timer.kitchen_timer_3
+    state_not:
+    - active
+    - paused
+  - condition: state
+    entity: input_boolean.kitchen_timer_1_ringing
+    state_not: 'on'
+  - condition: state
+    entity: input_boolean.kitchen_timer_2_ringing
+    state_not: 'on'
+  - condition: state
+    entity: input_boolean.kitchen_timer_3_ringing
     state_not: 'on'
 - type: custom:kitchen-timer-card
-  timer_entity: timer.oven
-  ringing_entity: input_boolean.oven_timer_ringing
   relay_script: kitchen_timer_relay
+  chime_tracker: device_tracker.uc_display_se_21
   chime_ips:
   - 192.168.0.105
   visibility:
   - condition: or
     conditions:
     - condition: state
-      entity: timer.oven
+      entity: timer.kitchen_timer_1
       state:
       - active
       - paused
     - condition: state
-      entity: input_boolean.oven_timer_ringing
+      entity: timer.kitchen_timer_2
+      state:
+      - active
+      - paused
+    - condition: state
+      entity: timer.kitchen_timer_3
+      state:
+      - active
+      - paused
+    - condition: state
+      entity: input_boolean.kitchen_timer_1_ringing
+      state: 'on'
+    - condition: state
+      entity: input_boolean.kitchen_timer_2_ringing
+      state: 'on'
+    - condition: state
+      entity: input_boolean.kitchen_timer_3_ringing
       state: 'on'

@@ -6,8 +6,9 @@ Size: Medium (a ge_home patch, an HA restart, and safety checks around a heating
 
 Links: [#255](https://github.com/thaynes43/hass-sandbox/issues/255) (why the oven's own kitchen
 timer can't be set remotely, with the ERD capture), [#259](https://github.com/thaynes43/hass-sandbox/issues/259),
-[#262](https://github.com/thaynes43/hass-sandbox/issues/262) (what was built instead: `timer.oven` on the
-kitchen Connect display).
+[#262](https://github.com/thaynes43/hass-sandbox/issues/262) (what was built instead: a kitchen timer on the
+kitchen Connect display, `timer.oven`; since [#266](https://github.com/thaynes43/hass-sandbox/issues/266) up to
+three named timers, `timer.kitchen_timer_1..3`).
 
 ## What Cook Time is
 
@@ -33,7 +34,8 @@ written as one cook-mode ERD:
   mode and temperature and changes only the cook-time field, refusing when the oven is off. That is
   custom code on a cooking appliance, outside the integration's tested paths.
 - **Tom declined it on 2026-10-18** because he wants a kitchen timer. #262 built that instead:
-  `timer.oven`, set by voice in the kitchen, counting down and chiming on the kitchen Connect display.
+  `timer.oven`, set by voice in the kitchen, counting down and chiming on the kitchen Connect display
+  (three named timers since #266).
 
 ## If it comes back
 
