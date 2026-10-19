@@ -1,0 +1,89 @@
+# automation.voice_oven_timer_sentences (created live via the HA config API, 2026-10-18; id stripped). hass-sandbox #262.
+# Kitchen oven timer by voice = timer.oven, shown on the kitchen Connect display (custom:kitchen-timer-card)
+# and announced by the kitchen Voice PE when it runs out. Not the Cafe oven's own timer (#255) and not a
+# Voice PE built-in timer (#259). Sentence triggers run before the built-in timer intents and before any
+# LLM agent, on every pipeline, so these phrasings never reach HassStartTimer ("timer named oven") or the
+# Kitchen OpenAI agent (which refuses oven requests). Everything goes to script.kitchen_timer_relay, the same
+# script the display card calls, and its reply is spoken as is.
+# Plain "set a timer for 5 minutes" and named timers ("pasta") have no "oven" in them, match nothing here
+# and stay Voice PE built-in timers.
+# Why sentence triggers and not /config/custom_sentences: custom sentences only map phrases to intents, and
+# a custom intent needs intent_script in configuration.yaml plus an HA restart; built-in intents only drive
+# Voice PE timers. Sentence triggers are UI-managed, reload without a restart, and the parser below (from
+# the retired #255 automation, reviewed in PR #256) handles spoken numbers. HA treats every {list} in a
+# trigger sentence as a free-text wildcard (no typed number lists), hence the parser.
+# Wildcards only follow a fixed verb ("set", "add"): a LEADING {duration} wildcard also swallowed
+# "cancel the timer for the oven" in #255, and two triggers matching one sentence would both run.
+# The `seconds` parser: digits or number words up to ninety-nine, hours/minutes/seconds, "an hour",
+# "half an hour", "a quarter hour", "N and a half", "five more minutes", "another minute". Anything left over (a bare
+# number, "a hundred", "pizza") gives 0, and the script asks again instead of guessing.
+alias: '[Voice] Oven timer sentences (kitchen display timer)'
+description: 'Voice front end for timer.oven (hass-sandbox #262): set, add, cancel/stop and how long is left. Sentence
+  triggers run before the built-in Voice PE timer intents and the LLM agents; every phrase goes to script.kitchen_timer_relay,
+  whose reply is spoken.'
+triggers:
+- trigger: conversation
+  id: start
+  command:
+  - (set|start|make|create) [a|an|the|my] oven timer (for|to) {duration}
+  - (set|start|make|create) [a|an|the|my] {duration} oven timer
+  - (set|start|make|create) [a|an|the|my] {duration} timer (for|on|named|called) [the|my|our] oven
+  - (set|start|make|create) [a|an|the|my] timer (for|on|named|called) [the|my|our] oven (for|to) {duration}
+  - (set|start|make|create) [a|an|the|my] timer for {duration} (for|on|named|called) [the|my|our] oven
+  - oven timer for {duration}
+- trigger: conversation
+  id: add
+  command:
+  - (add|put) {duration} (to|on) [the|my|our] oven timer
+  - (add|put) {duration} (to|on) [the|my|our] timer (on|for) [the|my|our] oven
+- trigger: conversation
+  id: cancel
+  command:
+  - (cancel|stop|clear|end|delete|reset|silence|dismiss) [the|my|our] oven timer[s]
+  - (cancel|stop|clear|end|delete|silence|dismiss) [the|my|our] timer (on|for|named|called) [the|my|our] oven
+  - (stop|silence|dismiss) [the|my|our] oven timer (alarm|chime|ringing|beeping)
+  - turn off [the|my|our] oven timer[s] [alarm|chime]
+  - turn [the|my|our] oven timer[s] off
+- trigger: conversation
+  id: status
+  command:
+  - '[how much] time [is] (left|remaining) on [the|my|our] oven timer'
+  - how (long|much time) [is] (left|remaining) on [the|my|our] oven timer
+  - how (long|much time) [is] (left|remaining) on [the|my|our] timer (on|for) [the|my|our] oven
+  - (what's|whats|what is) left on [the|my|our] oven timer
+  - how long until [the|my|our] oven timer (is done|goes off|finishes|rings|ends)
+  - '[the] oven timer status'
+  - status of [the|my|our] oven timer
+  - (check|read) [the|my|our] oven timer
+  - (is|is there) [an|the] oven timer (running|on|set)
+conditions: []
+actions:
+- alias: 'For start and add: the spoken length in seconds (0 = not understood; the script then asks again)'
+  variables:
+    seconds: '{% if trigger.id in [''start'', ''add''] %}{%- set words = {''one'': 1, ''two'': 2, ''three'': 3,
+      ''four'': 4, ''five'': 5, ''six'': 6, ''seven'': 7, ''eight'': 8, ''nine'': 9, ''ten'': 10, ''eleven'': 11,
+      ''twelve'': 12, ''thirteen'': 13, ''fourteen'': 14, ''fifteen'': 15, ''sixteen'': 16, ''seventeen'': 17, ''eighteen'':
+      18, ''nineteen'': 19, ''twenty'': 20, ''thirty'': 30, ''forty'': 40, ''fifty'': 50, ''sixty'': 60, ''seventy'':
+      70, ''eighty'': 80, ''ninety'': 90} -%}{%- set ns = namespace(t='' '' ~ ((trigger.slots or {}).get(''duration'',
+      '''') | string | lower | regex_replace(''[^a-z0-9.]+'', '' '') | regex_replace(''\\.(?!\\d)'', '' '')) ~ ''
+      '') -%}{%- for w, n in words.items() -%}{%- set ns.t = ns.t | regex_replace('' '' ~ w ~ '' '', '' '' ~ n ~
+      '' '') | regex_replace('' '' ~ w ~ '' '', '' '' ~ n ~ '' '') -%}{%- endfor -%}{%- set ns.t = ns.t | regex_replace(''
+      (?:another|one more|an extra) (hour|minute|second)'', '' 1 \\1'') | regex_replace('' (?:more|another|extra)
+      '', '' '') | regex_replace('' (?:more|another|extra) '', '' '') | regex_replace('' ([2-9])0 ([1-9]) '', ''
+      \\1\\2 '') | regex_replace('' (\\d+) and a half (hour|minute)'', '' \\1.5 \\2'') | regex_replace('' half (an?
+      )?hour'', '' 30 minute'') | regex_replace('' (a )?quarter (of )?(an )?hour'', '' 15 minute'') | regex_replace(''
+      an? (hour|minute|second)'', '' 1 \\1'') | regex_replace('' (\\d+) (hours?|minutes?) and a half '', '' \\1.5
+      \\2 '') -%}{%- set h = ns.t | regex_findall('' (\\d+(?:\\.\\d+)?) ?h(?:ou)?rs? '') | map(''float'') | sum
+      -%}{%- set m = ns.t | regex_findall('' (\\d+(?:\\.\\d+)?) ?min(?:ute)?s? '') | map(''float'') | sum -%}{%-
+      set s = ns.t | regex_findall('' (\\d+(?:\\.\\d+)?) ?sec(?:ond)?s? '') | map(''float'') | sum -%}{%- set leftover
+      = ns.t | regex_replace('' \\d+(?:\\.\\d+)? ?(?:h(?:ou)?rs?|min(?:ute)?s?|sec(?:ond)?s?)(?= )'', '''') | regex_replace(''
+      (?:and|an?|the|more|another|extra)(?= )'', '''') | trim -%}{{- 0 if leftover else (h * 3600 + m * 60 + s)
+      | round(0) | int -}}{% else %}0{% endif %}'
+- action: script.kitchen_timer_relay
+  data:
+    command: '{{ trigger.id }}'
+    payload: '{{ {''seconds'': seconds | int(0)} | to_json }}'
+  response_variable: answer
+- set_conversation_response: '{{ answer.response | default(''The oven timer did not answer.'', true) }}'
+mode: queued
+max: 3

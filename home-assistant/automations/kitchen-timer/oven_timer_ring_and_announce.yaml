@@ -1,0 +1,79 @@
+# automation.oven_timer_ring_and_announce (created live via the HA config API, 2026-10-18; id stripped). hass-sandbox #262.
+# When timer.oven finishes: input_boolean.oven_timer_ringing goes on, which turns the kitchen display's
+# timer card amber and makes it chime every 5 s, and the kitchen Voice PE announces once. Ringing stops on
+# a tap on the card, "stop the oven timer", any new start, or after 10 minutes (the cap below). A restart
+# clears a ring left on, and a once-a-minute sweep backs up the cap: a pending `for` does not survive a
+# restart or a reload of this automation.
+# Known gap: a timer that runs out while HA itself is down finishes during startup, before automations
+# load, so that one rings nowhere.
+alias: Oven timer ring and announce
+description: 'hass-sandbox #262. timer.oven finished: ringing on (the kitchen display card chimes) and the
+  kitchen Voice PE announces. Ringing turns off after 10 minutes, and at HA start.'
+triggers:
+- trigger: event
+  event_type: timer.finished
+  event_data:
+    entity_id: timer.oven
+  id: finished
+- trigger: state
+  entity_id: input_boolean.oven_timer_ringing
+  to: 'on'
+  for:
+    minutes: 10
+  id: cap
+- trigger: homeassistant
+  event: start
+  id: startup
+- trigger: time_pattern
+  minutes: /1
+  id: sweep
+conditions:
+- alias: The minute sweep only runs when a ring has been on for 10 minutes (keeps the logbook quiet)
+  condition: or
+  conditions:
+  - condition: not
+    conditions:
+    - condition: trigger
+      id: sweep
+  - condition: state
+    entity_id: input_boolean.oven_timer_ringing
+    state: 'on'
+    for:
+      minutes: 10
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id: finished
+    sequence:
+    - action: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.oven_timer_ringing
+    - alias: The satellite may be busy with a conversation; the display still rings
+      action: assist_satellite.announce
+      continue_on_error: true
+      target:
+        entity_id: assist_satellite.kitchen_assist_assist_satellite
+      data:
+        message: Oven timer is done.
+  - conditions:
+    - condition: trigger
+      id:
+      - cap
+      - startup
+    - condition: state
+      entity_id: input_boolean.oven_timer_ringing
+      state: 'on'
+    sequence:
+    - action: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.oven_timer_ringing
+  - conditions:
+    - condition: trigger
+      id: sweep
+    sequence:
+    - action: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.oven_timer_ringing
+mode: queued
+max: 5

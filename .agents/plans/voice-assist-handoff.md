@@ -151,13 +151,16 @@ set-temperature intent takes one thermostat only. School lunch questions ("what'
 tomorrow", "what is Jackson having on Friday") go to `script.voice_school_lunch` (2026-09-27,
 read-only). Tested by text on the Kitchen and Phone Assist pipelines; not yet asked out loud. Its
 building helper is private: see `agent-docs/voice-control-map.md` *House-wide mechanisms*.
-"Oven timer" by voice is the Voice PE built-in timer named "oven" (2026-10-18, #255); the Café
-oven's own kitchen timer is not used, because remote 0x5105 writes run hidden on its LCD and can't
-be dismissed on the panel (the app only offers Cook Time; ha_gehome#123 reports a lock or ring on
-expiry). `script.voice_oven_timer` and its sentence automation were deleted. Text-tested as the
-kitchen satellite; the Kitchen agent still refuses "set the oven timer for N minutes" (shared
-prompt says ovens are not available by voice) and "cancel the oven timer" misses a timer named
-"the oven". Details: the control map, *House-wide mechanisms*.
+"Oven timer" by voice is `timer.oven` (2026-10-18, #262): sentence triggers in
+`automation.voice_oven_timer_sentences` handle set / add / how long is left / cancel / stop locally on
+every pipeline and call `script.kitchen_timer_relay`; the countdown shows in the Disney countdown slot
+of the kitchen Connect display (unifi-connect), which chimes when it runs out, and the kitchen Voice PE
+announces "Oven timer is done." Plain and named timers ("pasta") are still Voice PE built-in timers.
+The Café oven's own timer is never used (#255: a remote 0x5105 write runs hidden on its LCD; Cook Time
+was declined, backlog 010). Bench-tested as the kitchen satellite. End to end on 2026-10-18 (timer
+started by text as the kitchen satellite) Tom saw the countdown, heard the display chime and the Voice
+PE announcement, and one tap silenced it. Not yet done: a set request in Tom's own voice.
+Details: the control map, *House-wide mechanisms*, and `agent-docs/kitchen-connect-display.md`.
 
 How music routing works, the patched blueprint, and why the Rumpus KEFs get no special
 handling: rollout plan, *Phase 3*. **The Music Assistant blueprint is locally patched**
