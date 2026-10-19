@@ -67,7 +67,7 @@ intents:
         slots:
           command: subtract
         sentences:
-          - "(remove|take|subtract) {kt_duration:duration} <kt_noun>"
+          - "(take|subtract) {kt_duration:duration} <kt_noun>"
           - "(remove|take|subtract) {kt_duration:duration} (from|off) [the|my|our] <kt_noun> [(for|on|named|called)] {kt_label:timer_label}"
           - "(decrease|shorten|reduce) [the|my|our] [{kt_label:timer_label}] <kt_noun> by {kt_duration:duration}"
           - "(remove|take|subtract) {kt_more:more} minute[s] [(off|from) [the|my|our] [{kt_label:timer_label}] <kt_noun>]"
