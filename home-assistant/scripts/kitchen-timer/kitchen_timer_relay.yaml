@@ -19,15 +19,18 @@
 #   cancel {slot | name?}   one timer. Several and no name: lists them and asks the speaker to name one.
 #   cancel_all              every timer.
 #   stop {slot | name?}     silences what is ringing; with nothing ringing it acts as cancel.
+#   stop_all                silences every ringing timer; with nothing ringing it acts as cancel_all.
 #   status {name?}          one timer, or all of them.
 #   pause / resume {name?}  one timer, or all of them.
-#   ring {slot}             ringing on; returns the announcement ("Pasta timer is done.").
+#   ring {slot}             ringing on; returns the announcement ("Pasta timer is done."). Nothing, and an empty reply,
+#                           when that timer runs again (a +1 min that raced the finish).
 #   expire {slot}           ringing off (the 10-minute cap).
 #   reset                   ringing off everywhere and stale names cleared (HA start).
 # A slot is busy while its timer is active or paused, or while it rings. Its name is cleared when it goes idle.
-# No name and several timers: "add" goes to the one timer that is done and ringing ("five more minutes"); a lone
-# plain "Timer" among named ones ("pasta") is "the timer"; otherwise the reply asks which one. "Timer one" / "the
-# first timer" also reach the plain "Timer".
+# No name and several timers: add / cancel / stop go to the one timer that is done and ringing ("five more minutes");
+# a lone plain "Timer" among named ones ("pasta") is "the timer"; status, pause and resume cover every timer;
+# otherwise the reply lists the timers and gives an example instead of guessing. "Timer one" / "the first timer" also
+# reach the plain "Timer". Name matching is exact, then whole words ("pasta water" finds "Pasta").
 alias: Kitchen timer relay
 description: >-
   Kitchen display timers (hass-sandbox #262, #266): up to three named timers in timer.kitchen_timer_1..3
@@ -40,7 +43,7 @@ max: 20
 fields:
   command:
     name: Command
-    description: start, add, subtract, cancel, cancel_all, stop, status, pause, resume, ring, expire or reset
+    description: start, add, subtract, cancel, cancel_all, stop, stop_all, status, pause, resume, ring, expire or reset
     required: true
     selector:
       text: {}
@@ -63,11 +66,12 @@ sequence:
       req_key: |-
         {#- The spoken label as a lookup key: lower case, no articles, no trailing "timer". -#}
         {%- set k = ' ' ~ (p.get('name', '') | string | lower | regex_replace("[^a-z0-9' ]+", ' ')) ~ ' ' -%}
-        {%- set k = k | regex_replace('^\\s*(?:(?:the|a|an|my|our|that|this)\\s+)+', '')
+        {%- set k = k | regex_replace('^\\s*(?:(?:the|a|an|my|our|that|this|all|both|every|of)\\s+)+', '')
               | regex_replace('(?:\\s+(?:timers?|countdowns?))+\\s*$', '') | regex_replace('\\s+', ' ') | trim -%}
         {%- if k is match('^(?:timer )?(?:one|1|1st|first)$') -%}{%- set k = 'timer 1' -%}
         {%- elif k is match('^(?:timer )?(?:two|2|2nd|second)$') -%}{%- set k = 'timer 2' -%}
-        {%- elif k is match('^(?:timer )?(?:three|3|3rd|third)$') -%}{%- set k = 'timer 3' -%}{%- endif -%}
+        {%- elif k is match('^(?:timer )?(?:three|3|3rd|third)$') -%}{%- set k = 'timer 3' -%}
+        {%- elif k is match('^\\d+$') -%}{%- set k = 'timer ' ~ k -%}{%- endif -%}
         {%- set generic = ['timer', 'countdown', 'kitchen', 'kitchen display', 'display', 'new', 'another', 'other',
               'regular', 'normal', 'quick', 'one more', 'extra'] -%}
         {{- '' if k in generic else k[:30] | trim -}}
@@ -150,26 +154,29 @@ sequence:
             {{- exact -}}
           {%- else -%}
             {%- set ns = namespace(l=[]) -%}
-            {%- for s in b if s.key in req_key or req_key in s.key -%}{%- set ns.l = ns.l + [s] -%}{%- endfor -%}
+            {#- Whole words only ("tea" is not "steak"), and never for "timer" / "timer N". -#}
+            {%- set rk = ' ' ~ req_key ~ ' ' -%}
+            {%- for s in b if not (s.key == 'timer' or s.key is match('^timer \\d+$') or req_key is match('^timer \\d+$'))
+                  and ((' ' ~ s.key ~ ' ') in rk or rk in (' ' ~ s.key ~ ' ')) -%}{%- set ns.l = ns.l + [s] -%}{%- endfor -%}
             {{- ns.l -}}
           {%- endif -%}
         {%- elif req_match_secs -%}
           {{- b | selectattr('total', 'eq', req_match_secs) | list -}}
         {%- else -%}
-          {#- No name and several timers: "five more minutes" goes to the one that just rang; otherwise a lone plain
-              "Timer" among named timers is "the timer" (except for status, which lists all). -#}
+          {#- No name and several timers: add / cancel / stop go to the one that just rang ("five more minutes");
+              otherwise a lone plain "Timer" among named timers is "the timer". Status, pause and resume cover all. -#}
           {%- set rang = b | selectattr('ringing') | rejectattr('running') | list -%}
           {%- set plain = b | selectattr('key', 'eq', 'timer') | list -%}
           {%- set numbered = b | selectattr('key', 'match', '^timer \\d+$') | list -%}
-          {%- if cmd == 'add' and b | count > 1 and rang | count == 1 -%}{{- rang -}}
-          {%- elif cmd != 'status' and b | count > 1 and plain | count == 1 and not numbered -%}{{- plain -}}
+          {%- if cmd in ['add', 'cancel', 'stop'] and b | count > 1 and rang | count == 1 -%}{{- rang -}}
+          {%- elif cmd not in ['status', 'pause', 'resume'] and b | count > 1 and plain | count == 1 and not numbered -%}{{- plain -}}
           {%- else -%}{{- b -}}{%- endif -%}
         {%- endif -%}
       none_running: No kitchen timers are running.
       not_caught: I didn't catch how long. Say, for example, set a pasta timer for ten minutes.
       too_long: A kitchen timer can run for up to 12 hours.
       missing: >-
-        There's no {{ 'timer like that' if not req_key else (req_key if req_key.startswith('timer ') else req_key ~ ' timer') }}.{{
+        There's no {{ 'timer like that' if not req_key else (req_key | string if (req_key | string).startswith('timer ') else req_key ~ ' timer') }}.{{
         ' You have ' ~ busy_said ~ '.' if busy_said else '' }}
       which: >-
         You have {{ count_word }} timers, {{ busy_said }}. Say which one, for example
@@ -402,10 +409,10 @@ sequence:
           - variables:
               result:
                 response: "{{ (hit[0].head ~ ' stopped.') if hit | count == 1 else 'Timers stopped.' }}"
-      - alias: cancel_all
+      - alias: cancel_all, or stop_all with nothing ringing
         conditions:
           - condition: template
-            value_template: "{{ cmd == 'cancel_all' }}"
+            value_template: "{{ cmd == 'cancel_all' or (cmd == 'stop_all' and not busy | selectattr('ringing') | list) }}"
         sequence:
           - repeat:
               for_each: "{{ busy | map(attribute='slot') | list }}"
@@ -426,6 +433,31 @@ sequence:
                 response: >-
                   {{ none_running if not busy else (busy[0].head ~ ' canceled.' if busy | count == 1
                   else ('Both timers canceled.' if busy | count == 2 else 'All three timers canceled.')) }}
+      - alias: stop_all with something ringing (silences every ringing timer, cancels nothing)
+        conditions:
+          - condition: template
+            value_template: "{{ cmd == 'stop_all' }}"
+        sequence:
+          - variables:
+              hit: "{{ busy | selectattr('ringing') | list }}"
+          - repeat:
+              for_each: "{{ hit | map(attribute='slot') | list }}"
+              sequence:
+                - action: input_boolean.turn_off
+                  target:
+                    entity_id: input_boolean.kitchen_timer_{{ repeat.item }}_ringing
+                - if:
+                    - condition: template
+                      value_template: "{{ not (hit | selectattr('slot', 'eq', repeat.item) | first).running }}"
+                  then:
+                    - action: input_text.set_value
+                      target:
+                        entity_id: input_text.kitchen_timer_{{ repeat.item }}_name
+                      data:
+                        value: ""
+          - variables:
+              result:
+                response: "{{ (hit[0].head ~ ' stopped.') if hit | count == 1 else 'Timers stopped.' }}"
       - alias: status
         conditions:
           - condition: template
@@ -475,11 +507,22 @@ sequence:
                   {%- elif hit | count == 1 -%}{{ hit[0].head }} {{ cmd }}d.
                   {%- else -%}{{ 'Paused ' if cmd == 'pause' else 'Resumed ' }}{{ hit | count }} timers.
                   {%- endif -%}
-      - alias: ring (from the ring automation)
+      - alias: >-
+          ring (from the ring automation). Skipped, with an empty reply, when the timer runs again: a +1 min that raced
+          the finish must not leave it chiming beside a running timer.
         conditions:
           - condition: template
             value_template: "{{ cmd == 'ring' and req_slot > 0 }}"
         sequence:
+          - if:
+              - condition: template
+                value_template: "{{ (slots | selectattr('slot', 'eq', req_slot) | first).running }}"
+            then:
+              - variables:
+                  result:
+                    response: ""
+              - stop: Running again
+                response_variable: result
           - action: input_boolean.turn_on
             target:
               entity_id: input_boolean.kitchen_timer_{{ req_slot }}_ringing

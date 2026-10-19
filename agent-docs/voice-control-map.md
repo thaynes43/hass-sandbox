@@ -40,12 +40,14 @@ wall switches and scene controllers already give people, and must not fight the 
   `script.kitchen_timer_relay` (the same script the display card calls), whose one-sentence reply is
   spoken. Covered: set ("set a timer for N", "set a pasta timer for N", "set the oven timer for N",
   "start a N minute countdown", "N minute timer", "set a timer for N named X"), add ("add N to the pasta
-  timer", "five more minutes", "add another minute"), take off ("take a minute off timer two"), how long is
+  timer", "give me five more minutes", "add another minute", "add 30 seconds"), take off ("take a minute off
+  timer two", "take 2 minutes off"), how long is
   left (one timer by name, or all: "what timers are running", "how much time is left"), cancel ("cancel
   the pasta timer", "cancel timer two"), cancel all, stop (silences what is ringing; with nothing ringing it
-  cancels), pause and resume. Names: the stated one, else "Timer", "Timer 2", "Timer 3"; a fourth gets
-  "The kitchen already has three timers running, ... Cancel one first." With several timers and no name the
-  reply lists them and gives an example rather than guessing (status lists all). Replies: "Pasta timer set for
+  cancels; "stop the timers" silences every ringing one), pause and resume (all timers when none is named). Names: the stated one, else "Timer", "Timer 2", "Timer 3"; a fourth gets
+  "The kitchen already has three timers running, ... Cancel one first." With several timers and no name, add /
+  cancel / stop go to the one that just rang, status / pause / resume cover all, and anything else lists the
+  timers and gives an example rather than guessing. Replies: "Pasta timer set for
   10 minutes.", "About 12 minutes left on the pasta timer.", "Two timers. Pasta has about 12 minutes left
   and the timer has 2 minutes left.", "Added 2 minutes to the pasta timer. About 12 minutes left.", "Pasta
   timer canceled.", "No kitchen timers are running.". Spoken numbers ("thirty-five", "an hour and a half")

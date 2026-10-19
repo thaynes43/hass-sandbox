@@ -4,7 +4,8 @@
 #   -> intent_script in packages/kitchen_timer.yaml -> this script -> script.kitchen_timer_relay.
 # The reply this returns is what the kitchen Voice PE says.
 # Slots from the sentences (all optional): command, timer_label (the name part: "pasta", "the five minute"),
-# duration (a free-text length, or a whole "5 minute pasta" spec), more (whole minutes from "five more minutes").
+# duration (a free-text length, or a whole "5 minute pasta" spec), more / more_seconds (typed amounts from "five more
+# minutes", "add 30 seconds"), bare (the "{length} timer" form, which takes no name).
 # The parser turns spoken lengths into seconds: digits or number words up to ninety-nine, hours / minutes /
 # seconds, "an hour", "half an hour", "a quarter hour", "N and a half", "another minute", "1 hour 30". For start,
 # words left over after the length become the timer's name ("set a 5 minute pasta timer"). A length it cannot read
@@ -34,6 +35,20 @@ fields:
     description: The spoken length, for example "thirty five minutes" or "an hour and a half".
     selector:
       text: {}
+  more_seconds:
+    name: More seconds
+    description: Whole seconds from "add 30 seconds".
+    selector:
+      number:
+        min: 0
+        max: 3600
+  bare:
+    name: Bare form
+    description: 1 when the sentence was just "{length} timer", which takes no name.
+    selector:
+      number:
+        min: 0
+        max: 1
   more:
     name: More minutes
     description: Whole minutes from "five more minutes".
@@ -47,6 +62,15 @@ sequence:
       label: "{{ timer_label | default('', true) | string | trim }}"
       spoken: "{{ duration | default('', true) | string | trim }}"
       more_minutes: "{{ more | default(0, true) | int(0) }}"
+      more_secs: "{{ more_seconds | default(0, true) | int(0) }}"
+      bare_form: "{{ bare | default(0, true) | int(0) > 0 }}"
+      amount_text: |-
+        {#- "2 minutes to the pasta": the amount before the last to / on / off / from, the target after it. -#}
+        {%- set m = spoken | string | lower | regex_findall('^(.*) (?:to|on|off|from) (.*)$') -%}
+        {{- m[0][0] if m else spoken | string -}}
+      target_text: |-
+        {%- set m = spoken | string | lower | regex_findall('^(.*) (?:to|on|off|from) (.*)$') -%}
+        {{- m[0][1] if m else '' -}}
       parse: |-
         {#- For each text: {seconds, rest}. rest = words left over after the length, fillers removed. -#}
         {%- set words = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8,
@@ -55,8 +79,8 @@ sequence:
               'fifty': 50, 'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90} -%}
         {%- set fill = '(?:and|for|of|named|called|please|now|more|another|extra|timer|timers|countdown|on|to|from|off|the|my|our|a|an)' -%}
         {%- set out = namespace(l=[]) -%}
-        {%- for key, text in [('label', label), ('spoken', spoken), ('both', label ~ ' ' ~ spoken)] -%}
-          {%- set ns = namespace(t=' ' ~ (text | lower | regex_replace('[^a-z0-9.]+', ' ') | regex_replace('\\.(?!\\d)', ' ')) ~ ' ') -%}
+        {%- for key, text in [('label', label), ('spoken', spoken), ('both', label ~ ' ' ~ spoken), ('amount', amount_text), ('target', target_text)] -%}
+          {%- set ns = namespace(t=' ' ~ (text | string | lower | regex_replace('[^a-z0-9.]+', ' ') | regex_replace('\\.(?!\\d)', ' ')) ~ ' ') -%}
           {%- for w, n in words.items() -%}
             {%- set ns.t = ns.t | regex_replace(' ' ~ w ~ ' ', ' ' ~ n ~ ' ') | regex_replace(' ' ~ w ~ ' ', ' ' ~ n ~ ' ') -%}
           {%- endfor -%}
@@ -80,33 +104,42 @@ sequence:
         {%- endfor -%}
         {{- dict(out.l) -}}
   - variables:
+      relay_cmd: >-
+        {{ 'add' if cmd == 'start' and parse.both.seconds > 0
+           and (' ' ~ (label ~ ' ' ~ spoken) | string | lower ~ ' ') is search(' more ') else cmd }}
       payload: |-
+        {%- set target_len = parse.label.seconds > 0 and parse.label.rest == '' -%}
+        {%- set extra = more_minutes * 60 + more_secs -%}
         {%- if cmd == 'start' -%}
-          {#- The name is whatever is left after the length; a leftover with no letters means the length was not understood. -#}
+          {#- The name is whatever is left after the length; a leftover with no letters means the length was not
+              understood. The bare "{length} timer" form takes no name: "never mind the 5 minute timer" must not
+              start a timer called "Never mind". "Set 5 more minutes on the pasta timer" is an add. -#}
           {%- set b = parse.both -%}
-          {%- set ok = b.rest == '' or b.rest is search('[a-z]') -%}
+          {%- set ok = (b.rest == '' or b.rest is search('[a-z]')) and not (bare_form and b.rest != '') -%}
           {{- {'seconds': b.seconds if ok else 0, 'name': b.rest if ok else ''} | to_json -}}
-        {%- elif cmd in ['add', 'subtract'] and more_minutes > 0 -%}
-          {{- {'seconds': more_minutes * 60, 'name': label} | to_json -}}
-        {%- elif cmd in ['add', 'subtract'] and parse.label.seconds > 0 and parse.label.rest == '' -%}
-          {#- "add 2 minutes to the 5 minute timer": the label is a length, so it picks the timer by its length. -#}
-          {{- {'seconds': parse.spoken.seconds if parse.spoken.rest == '' else 0, 'name': '',
-               'match_seconds': parse.label.seconds} | to_json -}}
-        {%- elif cmd in ['add', 'subtract'] and label -%}
-          {#- "add 2 minutes to timer two": the name came separately. -#}
-          {{- {'seconds': parse.spoken.seconds if parse.spoken.rest == '' else 0, 'name': label} | to_json -}}
+        {%- elif cmd in ['add', 'subtract'] and (extra > 0 or label) -%}
+          {#- A typed amount ("five more minutes", "add 30 seconds") or a separate name ("add 2 minutes to timer two").
+              A name that is a length ("the 5 minute timer") picks the timer by its length. -#}
+          {%- set secs = extra if extra > 0 else (parse.spoken.seconds if parse.spoken.rest == '' else 0) -%}
+          {{- {'seconds': secs, 'name': '' if target_len else label,
+               'match_seconds': parse.label.seconds if target_len else 0} | to_json -}}
+        {%- elif cmd in ['add', 'subtract'] and target_text -%}
+          {#- One wildcard, "2 minutes to the pasta" or "2 minutes to the 5 minute": amount before the last
+              to / on / off / from, target after it. -#}
+          {%- set a = parse.amount -%}{%- set t = parse.target -%}
+          {%- set by_len = t.seconds > 0 and t.rest == '' -%}
+          {{- {'seconds': a.seconds if a.rest == '' else 0, 'name': '' if by_len else t.rest,
+               'match_seconds': t.seconds if by_len else 0} | to_json -}}
         {%- elif cmd in ['add', 'subtract'] -%}
-          {#- "2 minutes to the pasta": the length is the amount and the words left over name the timer. -#}
           {%- set b = parse.both -%}
           {%- set ok = b.rest == '' or b.rest is search('[a-z]') -%}
           {{- {'seconds': b.seconds if ok else 0, 'name': b.rest if ok else ''} | to_json -}}
         {%- else -%}
-          {%- set by_length = parse.label.seconds > 0 and parse.label.rest == '' -%}
-          {{- {'name': '' if by_length else label, 'match_seconds': parse.label.seconds if by_length else 0} | to_json -}}
+          {{- {'name': '' if target_len else label, 'match_seconds': parse.label.seconds if target_len else 0} | to_json -}}
         {%- endif -%}
   - action: script.kitchen_timer_relay
     data:
-      command: "{{ cmd }}"
+      command: "{{ relay_cmd }}"
       payload: "{{ payload | to_json if payload is mapping else payload }}"
     response_variable: answer
   - variables:

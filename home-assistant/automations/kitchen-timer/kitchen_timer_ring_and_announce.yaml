@@ -101,13 +101,19 @@ actions:
               command: ring
               payload: '{"slot": {{ slot }}}'
             response_variable: rung
-          - alias: The satellite may be busy with a conversation; the display still rings
-            action: assist_satellite.announce
-            continue_on_error: true
-            target:
-              entity_id: assist_satellite.kitchen_assist_assist_satellite
-            data:
-              message: "{{ rung.response | default('A kitchen timer is done.', true) }}"
+          - alias: >-
+              Announce unless the relay skipped the ring (empty reply: the timer runs again after a +1 min that raced the
+              finish). The satellite may be busy with a conversation; the display still rings.
+            if:
+              - condition: template
+                value_template: "{{ rung.response | default('', true) | length > 0 }}"
+            then:
+              - action: assist_satellite.announce
+                continue_on_error: true
+                target:
+                  entity_id: assist_satellite.kitchen_assist_assist_satellite
+                data:
+                  message: "{{ rung.response }}"
       - conditions:
           - condition: trigger
             id: cap

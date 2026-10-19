@@ -19,6 +19,8 @@ intent_script:
           timer_label: "{{ timer_label | default('') }}"
           duration: "{{ duration | default('') }}"
           more: "{{ more | default(0) }}"
+          more_seconds: "{{ more_seconds | default(0) }}"
+          bare: "{{ bare | default(0) }}"
         response_variable: result
       - stop: Done
         response_variable: result

@@ -57,12 +57,18 @@ Slots and names:
   is already busy restarts that timer. The name is cleared when the slot goes idle.
 - The card labels "Timer" as **Kitchen timer**; "Timer 2" and named timers show as they are. Rows keep
   slot order, so a row never moves under a finger.
-- With several timers and no name: `add` goes to the one that is done and ringing ("five more
-  minutes"), a lone plain "Timer" among named ones is "the timer", status lists all of them, and
-  cancel / add / pause otherwise reply with the names and an example instead of guessing. "Timer one",
-  "the first timer" also reach the plain "Timer".
+- With several timers and no name: add / cancel / stop go to the one that is done and ringing ("five
+  more minutes"); a lone plain "Timer" among named ones is "the timer"; status, pause and resume cover
+  all of them; anything else replies with the names and an example instead of guessing. "Timer one",
+  "the first timer" also reach the plain "Timer". Names match exactly, then by whole words ("pasta water"
+  finds "Pasta", "tea" never finds "Steak"). "The 5 minute timer" matches a timer's *current* length, so
+  it stops matching after +1 min or a take-off.
 - `stop` silences what is ringing (every ringing one when no name is given); with nothing ringing it
-  acts as cancel. `cancel` on a ringing timer stops it too.
+  acts as cancel. "Stop the timers" / "stop all timers" (`stop_all`) silences every ringing timer, or
+  cancels them all when nothing rings. `cancel` on a ringing timer stops it too.
+- `ring` does nothing (empty reply, so no announcement) when the timer is running again: a +1 min that
+  races the finish must not leave the kitchen chiming beside a running timer. The card's ringer also
+  skips a slot whose timer runs.
 
 Card behaviour:
 
@@ -122,7 +128,9 @@ intent_script offers each intent as an LLM tool to every agent whose exposed dom
 ## Deploying card changes
 
 1. Copy the JS into the HA pod (kubectl exec + base64, see the card-deploy memory) and check the md5.
-2. Bump `?v=N` on the resource. Current resource: `?v=3` (2026-10-18, three timers).
+2. Bump `?v=N` on the resource. Current resource: `?v=4` (2026-10-18). Tom restarted both displays on
+   `?v=3` (three timers) at 21:10 for the audible test; `?v=4` only adds the ringer guard for a timer that
+   runs again, and loads at their next page reload.
 3. **Restart both displays** (Tom, UniFi Connect app), or let them pick it up at their next page reload
    (every HA update reloads the frontend). Dashboard *config* edits reach an open page live
    (`lovelace_updated`), but new or changed card *code* only loads on a page reload. Until then a

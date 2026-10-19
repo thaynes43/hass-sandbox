@@ -34,7 +34,7 @@ The wall oven is a connected Café double oven, and Home Assistant can write its
 
 - **Voice** is matched locally in a fraction of a second, before any AI agent sees it.
 - **One script** owns the timers. The display card and the voice commands both call it, so "add 5 minutes", the +1 min button and the spoken replies all follow the same rules.
-- **The display card** swaps into the slot of the family's cruise countdown while any timer runs or rings, and the countdown comes back when they're all done. With one timer the card shows big digits; with two or three it shows one row each, in the order they were set, so a row never moves under your finger. Both cards are exactly the same size, so nothing else on the pixel-tuned dashboard moves.
+- **The display card** swaps into the slot of the family's cruise countdown while any timer runs or rings, and the countdown comes back when they're all done. With one timer the card shows big digits; with two or three it shows one row each. Rows keep their places while timers come and go, so a row never moves under your finger. Both cards are exactly the same size, so nothing else on the pixel-tuned dashboard moves.
 
 ## What you can say
 
@@ -44,13 +44,13 @@ The wall oven is a connected Café double oven, and Home Assistant can write its
 | "Set a pasta timer for 10 minutes", "set the oven timer for 35 minutes" | "Pasta timer set for 10 minutes." |
 | "How long is left on the pasta timer?" | "About 8 minutes left on the pasta timer." |
 | "What timers are running?", "how much time is left?" | "Two timers. Pasta has about 8 minutes left and the timer has 2 minutes left." |
-| "Add 2 minutes to the pasta timer", "five more minutes" | "Added 2 minutes to the pasta timer. About 10 minutes left." |
+| "Add 2 minutes to the pasta timer", "give me five more minutes", "add 30 seconds" | "Added 2 minutes to the pasta timer. About 10 minutes left." |
 | "Take a minute off timer two" | "Took 1 minute off Timer 2. 2 minutes left." |
 | "Pause the pasta timer", "resume the pasta timer" | "Pasta timer paused." |
 | "Cancel the pasta timer", "cancel all timers" | "Pasta timer canceled." / "Both timers canceled." |
-| "Stop the timer" (while one is ringing) | "Pasta timer stopped." |
+| "Stop the timer" (while one is ringing), "stop the timers" | "Pasta timer stopped." |
 
-A timer without a name is "Timer", then "Timer 2" and "Timer 3"; on the display the first one reads "Kitchen timer". A fourth timer gets a polite no: "The kitchen already has three timers running, pasta, rice and the timer. Cancel one first." When more than one timer is running and you don't say which, questions get an answer about all of them, and changes get a short list of the names instead of a guess. "Five more minutes" goes to the timer that just went off.
+A timer without a name is "Timer", then "Timer 2" and "Timer 3"; on the display the first one reads "Kitchen timer". A fourth timer gets a polite no: "The kitchen already has three timers running, pasta, rice and the timer. Cancel one first." When more than one timer is running and you don't say which, questions get an answer about all of them and pause or resume applies to all of them. "Five more minutes" or "cancel the timer" goes to the timer that just went off. Otherwise the reply lists the names and asks you to pick one instead of guessing.
 
 Hours, minutes and seconds work in digits or words ("an hour and a half", "ninety seconds"). If the length can't be understood, the reply asks again instead of guessing.
 

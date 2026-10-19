@@ -166,6 +166,9 @@ function ktRingerTick() {
       delete KT.episodes[ent];
       return;
     }
+    // A timer that runs again is not done, whatever its ringing flag says (a +1 min that raced the finish).
+    const timer = hass.states[cfg.timer_prefix + n];
+    if (timer && (timer.state === "active" || timer.state === "paused")) return;
     // Episode = this run of "on". Measured with the local clock from when this page
     // first saw it, so a skewed display clock cannot cut the cap short.
     if (!KT.episodes[ent] || KT.episodes[ent].id !== ring.last_changed) {
@@ -478,7 +481,7 @@ class KitchenTimerCard extends HTMLElement {
       }
     });
 
-    const anyRing = timers.some((t) => t.ringing);
+    const anyRing = timers.some((t) => t.mode === "ring");
     const blocked =
       anyRing && ktChimeAllowed(this._config, this._hass) && ktAudioState() !== "running";
     this._el.muted.hidden = !blocked;
