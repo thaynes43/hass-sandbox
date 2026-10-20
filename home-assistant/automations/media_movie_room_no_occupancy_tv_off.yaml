@@ -58,17 +58,10 @@ triggers:
       - binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor
     to: 'on'
     id: occupancy_detected
-  - alias: TV off for a minute (ends a manual cancel; a connection blip does not)
-    trigger: state
-    entity_id: media_player.lg_webos_tv_oled83g4wua
-    not_from:
-      - 'off'
-      - unavailable
-      - unknown
-    to:
-      - 'off'
-      - unavailable
-      - unknown
+  - alias: TV inactive for a minute (ends a manual cancel; a connection blip does not)
+    trigger: template
+    value_template: '{{ states(''media_player.lg_webos_tv_oled83g4wua'') in [''off'', ''unavailable'',
+      ''unknown''] }}'
     for: '00:01:00'
     id: tv_off_settled
   - alias: Hold released (Cleaners Mode clear-hold, manual hold button or dashboard toggle)

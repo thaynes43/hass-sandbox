@@ -52,7 +52,7 @@ class Room:
         self.calls = []
         self.running = {}
         self.queue = []
-        self.timers = []  # state triggers with `for:` waiting to fire: [due, name, id, entity, to_states]
+        self.timers = []  # triggers with `for:` waiting to fire: [due, name, id, still_holds()]
         self.latency = announcement_seconds
         self.fail_announce = False
         self.env = NativeEnvironment()
@@ -157,6 +157,10 @@ class Room:
                     new = bool(self.render(t['value_template'], {}))
                     fire = new and not self.edges[name, i]
                     self.edges[name, i] = new
+                    if fire and 'for' in t:  # HA: the template must stay true for the period
+                        fire = False
+                        self.timers.append([self.now + self.seconds(t['for']), name, t['id'],
+                                            lambda tpl=t['value_template']: bool(self.render(tpl, {}))])
                 elif t['trigger'] == 'state':
                     to = t.get('to')
                     to_states = to if isinstance(to, list) else None if to is None else [to]
@@ -165,8 +169,9 @@ class Room:
                         if (old != new and (to_states is None or new in to_states)
                                 and old == t.get('from', old) and old not in t.get('not_from', [])
                                 and new not in t.get('not_to', [])):
-                            if 'for' in t:
-                                self.timers.append([self.now + self.seconds(t['for']), name, t['id'], e, to_states])
+                            if 'for' in t:  # HA holds the exact value that started the timer
+                                self.timers.append([self.now + self.seconds(t['for']), name, t['id'],
+                                                    lambda e=e, v=new: self.states.get(e) == v])
                             else:
                                 fire = True
                                 to_state = SimpleNamespace(state=new, context=SimpleNamespace(user_id=user))
@@ -179,7 +184,7 @@ class Room:
 
     def fire_due_timers(self):
         # A `for:` timer is cancelled as soon as its entity leaves the matched states.
-        self.timers = [x for x in self.timers if self.states.get(x[3]) in x[4]]
+        self.timers = [x for x in self.timers if x[3]()]
         for x in [x for x in self.timers if x[0] <= self.now]:
             self.timers.remove(x)
             self.queue.append((x[1], x[2], None))
@@ -771,6 +776,23 @@ def test_automation_clearing_pending_is_never_a_manual_cancel():
     t0 = r.now
     r.advance(1800)
     assert [(c[0] - t0, c[1]) for c in r.device_offs()][-1] == (1800, 'light.turn_off')
+
+
+def test_tv_off_then_unavailable_within_a_minute_still_ends_a_manual_cancel():
+    r = Room()
+    r.empty()
+    r.advance(1000)
+    r.cancel()
+    t0 = r.now
+    r.set(**{TV: 'off'})
+    r.advance(20)
+    r.set(**{TV: 'unavailable'})  # webOS rests unavailable after off
+    r.advance(39)
+    assert r.states[CANCELLED] == 'on'
+    r.advance(1)
+    assert r.states[CANCELLED] == 'off' and r.states[PENDING] == 'on'
+    r.advance(1800)
+    assert [(c[0] - t0, c[1]) for c in r.device_offs()] == [(1860, 'light.turn_off')]
 
 
 @pytest.mark.parametrize('blip', ['unavailable', 'off'])
