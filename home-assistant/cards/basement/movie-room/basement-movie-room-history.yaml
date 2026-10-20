@@ -164,7 +164,7 @@ cards:
 
       <ha-icon icon="mdi:timer-sand"></ha-icon> **Switch Clear Delay:** {{ hold_time_s | round(1) }} + ({{ stay_life_raw | round(0) }} / 20) ≈ {{ mmwave_delay_s | round(1) }}s
 
-      <ha-icon icon="mdi:information-outline"></ha-icon> **Note:** the switch reports the room empty only after this clear delay. TV and Lights Auto-Off (below) then decides when the lights and TV turn off.
+      <ha-icon icon="mdi:information-outline"></ha-icon> **Note:** the room reads empty only once the switch (after this clear delay) and the FP2 are both clear. TV and Lights Auto-Off (below) then decides when the lights and TV turn off.
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
@@ -301,12 +301,12 @@ cards:
     content: |
       ## TV and Lights Auto-Off
 
-      - **Pending (toggle off to cancel)**: on while an auto-off is under way. Turning it **off** cancels it until someone is detected in the room or the TV has been off for a minute.
+      - **Pending (toggle off to cancel)**: on while an auto-off is under way. Turning it **off** cancels it until someone is detected in the room or the TV is turned off for a minute.
       - **Automation**: turns the whole auto-off on or off.
-      - **Shutoff Delay**: once the room reads empty, it waits this long minus 5 minutes, then counts down 15 minutes.
+      - **Shutoff Delay**: once the room reads empty, it waits this long minus 5 minutes, then counts down 15 minutes. Turning the TV on or off starts the wait over.
       - TV on: **Movie Room Voice** warns at 15, 10, 5 and 1 minutes, then the TV and lights turn off. TV off: the countdown is silent and only the lights turn off.
       - Lights turned on in an empty room, or a hold ending, start the 15-minute countdown at once.
-      - A hold, or **No Motion Turns Off Lights** turned off, keeps the lights on.
+      - A hold, or **No Motion Turns Off Lights** turned off, keeps the lights on; the TV still turns off on schedule.
   - type: custom:bubble-card
     card_type: sub-buttons
     show_header_toggle: false
