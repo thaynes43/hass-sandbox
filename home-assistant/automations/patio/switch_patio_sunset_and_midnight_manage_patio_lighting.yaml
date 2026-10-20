@@ -23,6 +23,7 @@ action:
             target:
               entity_id:
                 - switch.back_yard_retaining_wall_lights_relay
+                - light.patio_hue_discover_flood_light
             data: {}
       - conditions:
           - condition: trigger
@@ -32,4 +33,5 @@ action:
             target:
               entity_id:
                 - switch.back_yard_retaining_wall_lights_relay
+                - light.patio_hue_discover_flood_light
             data: {}
