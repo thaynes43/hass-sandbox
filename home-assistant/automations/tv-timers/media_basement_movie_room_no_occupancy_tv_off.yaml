@@ -17,8 +17,11 @@ description: |
   Recheck triggers (lights automation re-enabled, any LED1 change, HA start,
   any automation reload, either light group turning on) skip the absence window
   and start the countdown immediately when the room is already vacant, but never
-  interrupt a countdown that is running. A recheck can re-arm a countdown that
-  was cancelled with the pending toggle while the room still reads vacant.
+  interrupt a countdown that is running.
+  A manual cancel sticks (Tom, ruling Q6): when a person turns the pending toggle
+  off, input_boolean.basement_movie_room_tv_auto_off_cancelled turns on and no
+  countdown starts again (no recheck, vacancy edge or TV-on edge) until either
+  sensor reports occupancy or the TV turns off.
   Occupancy or any sensor not reporting off, a hold during a lights-only
   countdown, or cancelling the pending toggle aborts the whole run. Lights go
   off only at the final hold-checked step; the TV off command is sent only when
@@ -47,6 +50,13 @@ triggers:
     entity_id: input_boolean.basement_movie_room_tv_auto_off_enabled
     to: 'off'
     id: pending_cancelled
+  - alias: Occupancy detected (ends a manual cancel)
+    trigger: state
+    entity_id:
+      - binary_sensor.basement_movie_inovelli_presence_occupancy
+      - binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor
+    to: 'on'
+    id: occupancy_detected
   - alias: Hold released (Cleaners Mode clear-hold, manual hold button or dashboard toggle)
     trigger: state
     entity_id: automation.light_inovelli_movie_room_motion_cleared_lights_off
@@ -74,21 +84,46 @@ triggers:
     event_type: automation_reloaded
     id: recheck
 conditions:
-  - alias: A recheck never interrupts a countdown in progress
+  - alias: A manual cancel blocks every start; a recheck never interrupts a countdown in progress
     condition: template
-    value_template: "{{ trigger.id != 'recheck' or (this.attributes.current | int(0)) == 0 }}"
+    value_template: >-
+      {{ trigger.id not in ['room_empty', 'tv_active', 'recheck']
+         or (not is_state('input_boolean.basement_movie_room_tv_auto_off_cancelled', 'on')
+             and (trigger.id != 'recheck' or (this.attributes.current | int(0)) == 0)) }}
 actions:
+  - alias: Occupancy or the TV turning off ends a manual cancel
+    if:
+      - condition: trigger
+        id:
+          - occupancy_detected
+          - tv_inactive
+      - condition: state
+        entity_id: input_boolean.basement_movie_room_tv_auto_off_cancelled
+        state: 'on'
+    then:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.basement_movie_room_tv_auto_off_cancelled
   - choose:
       - conditions:
           - condition: trigger
             id:
               - room_not_empty
               - pending_cancelled
+              - occupancy_detected
         sequence:
           - &clear_pending
             action: input_boolean.turn_off
             target:
               entity_id: input_boolean.basement_movie_room_tv_auto_off_enabled
+          - alias: A person turning the pending toggle off is a manual cancel, which sticks
+            if:
+              - condition: template
+                value_template: "{{ trigger.id == 'pending_cancelled' and trigger.to_state.context.user_id is not none }}"
+            then:
+              - action: input_boolean.turn_on
+                target:
+                  entity_id: input_boolean.basement_movie_room_tv_auto_off_cancelled
       - conditions:
           - condition: trigger
             id:

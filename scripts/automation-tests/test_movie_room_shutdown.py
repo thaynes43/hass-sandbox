@@ -21,6 +21,7 @@ SENSORS = ['binary_sensor.basement_movie_inovelli_presence_occupancy',
 LIGHTS = ['light.basement_movie_room_lights', 'light.basement_movie_room_ambient_lighting']
 LED = 'number.basement_movie_inovelli_presence_defaultled1colorwhenon'
 LIGHTS_AUTOMATION = 'automation.light_inovelli_movie_room_motion_cleared_lights_off'
+CANCELLED = 'input_boolean.basement_movie_room_tv_auto_off_cancelled'
 TV_PATH = ROOT / 'home-assistant/automations/tv-timers/media_basement_movie_room_no_occupancy_tv_off.yaml'
 LIGHT_PATH = ROOT / 'home-assistant/automations/occupancy-based-lighting/light_inovelli_movie_room_motion_cleared_lights_off.yaml'
 
@@ -42,7 +43,7 @@ class Room:
         self.configs = {'tv': yaml.safe_load(TV_PATH.read_text()),
                         'lights': yaml.safe_load(LIGHT_PATH.read_text())}
         self.states = {TV: tv, PENDING: 'off', SENSORS[0]: 'on', SENSORS[1]: 'on',
-                       LIGHTS[0]: lights, LIGHTS[1]: 'off', LIGHTS_AUTOMATION: 'on',
+                       LIGHTS[0]: lights, LIGHTS[1]: 'off', LIGHTS_AUTOMATION: 'on', CANCELLED: 'off',
                        LED: '255', 'input_text.inovelli_manual_hold': '90',
                        'input_text.inovelli_auto_hold': '130',
                        'input_select.basement_movie_room_tv_auto_off_delay': '00:20:00',
@@ -143,12 +144,14 @@ class Room:
             else:
                 raise AssertionError(a)
 
-    def update(self, changes):
+    def update(self, changes, user=None):
+        """Apply state changes; `user` is the context user_id (None = an automation or device)."""
         previous = self.states.copy()
         self.states.update(changes)
         for name, c in self.configs.items():
             for i, t in enumerate(c['triggers']):
                 fire = False
+                to_state = None
                 if t['trigger'] == 'template':
                     new = bool(self.render(t['value_template'], {}))
                     fire = new and not self.edges[name, i]
@@ -156,20 +159,27 @@ class Room:
                 elif t['trigger'] == 'state':
                     for e in (t['entity_id'] if isinstance(t['entity_id'], list) else [t['entity_id']]):
                         old, new = previous.get(e), self.states.get(e)
-                        fire = fire or (old != new and new == t.get('to', new)
-                                        and old == t.get('from', old) and new not in t.get('not_to', []))
+                        if (old != new and new == t.get('to', new)
+                                and old == t.get('from', old) and new not in t.get('not_to', [])):
+                            fire = True
+                            to_state = SimpleNamespace(state=new, context=SimpleNamespace(user_id=user))
                 if fire:
-                    self.queue.append((name, t['id']))
+                    self.queue.append((name, t['id'], to_state))
 
     def set(self, **changes):
         self.update(changes)
+        self.drain()
+
+    def cancel(self):
+        """A person turns the pending toggle off (dashboard/app call: context.user_id set)."""
+        self.update({PENDING: 'off'}, user='tom')
         self.drain()
 
     def fire(self, kind, value):
         for name, c in self.configs.items():
             for t in c['triggers']:
                 if t['trigger'] == kind and value in (t.get('event'), t.get('event_type')):
-                    self.queue.append((name, t['id']))
+                    self.queue.append((name, t['id'], None))
         self.drain()
 
     def ha_start(self):
@@ -188,9 +198,9 @@ class Room:
     def drain(self):
         for _ in range(100):  # safety bound on immediate actions, no CPU/load loops
             while self.queue:
-                name, trigger = self.queue.pop(0)
+                name, trigger, to_state = self.queue.pop(0)
                 assert self.configs[name]['mode'] == 'restart'
-                v = {'trigger': SimpleNamespace(id=trigger),
+                v = {'trigger': SimpleNamespace(id=trigger, to_state=to_state),
                      'this': {'attributes': {'current': int(name in self.running)}}}
                 if not self.condition(self.configs[name].get('conditions', []), v):
                     continue  # conditions fail before restart mode stops a run
@@ -280,7 +290,7 @@ def test_pending_toggle_cancels(at):
     r = Room()
     r.empty()
     r.advance(at)
-    r.set(**{PENDING: 'off'})
+    r.cancel()
     r.advance(2000)
     assert not r.device_offs()
     assert r.states[PENDING] == 'off'
@@ -634,6 +644,122 @@ def test_lights_automation_reload_blip_does_not_disturb_a_lights_only_countdown(
 def test_lights_automation_has_no_separate_shutoff_path():
     config = yaml.safe_load(LIGHT_PATH.read_text())
     assert config['triggers'] == [] and config['actions'] == []
+
+
+# --- Ruling Q6: a manual cancel sticks until occupancy is detected or the TV turns off ---
+
+STARTS = {'reload_other': lambda r: r.reload(),
+          'reload_self': lambda r: r.reload('tv'),
+          'ha_start': lambda r: r.ha_start(),
+          'ambient_on': lambda r: r.set(**{LIGHTS[1]: 'on'}),
+          'lights_off_then_on': lambda r: (r.set(**{LIGHTS[0]: 'off'}), r.set(**{LIGHTS[0]: 'on'})),
+          'led_change': lambda r: r.set(**{LED: '200'}),
+          'hold_release': lambda r: (r.set(**{LIGHTS_AUTOMATION: 'off'}), r.set(**{LIGHTS_AUTOMATION: 'on'})),
+          'sensor_blip': lambda r: (r.set(**{SENSORS[1]: 'unavailable'}), r.set(**{SENSORS[1]: 'off'}))}
+
+
+@pytest.mark.parametrize('start', STARTS)
+@pytest.mark.parametrize('tv', ['on', 'unavailable'])
+def test_manual_cancel_sticks_through_every_recheck(start, tv):
+    r = Room(tv=tv)
+    r.empty()
+    r.advance(1000)
+    spoken = len(r.announcements())
+    r.cancel()
+    assert r.states[PENDING] == 'off' and r.states[CANCELLED] == 'on'
+    STARTS[start](r)
+    r.advance(4000)
+    assert not r.device_offs()
+    assert len(r.announcements()) == spoken
+    assert r.states[PENDING] == 'off' and r.states[CANCELLED] == 'on'
+
+
+def test_manual_cancel_of_lights_only_countdown_sticks_when_the_tv_turns_on():
+    r = Room(tv='unavailable')
+    r.empty()
+    r.advance(1000)
+    r.cancel()
+    r.set(**{TV: 'on'})
+    r.advance(4000)
+    assert not r.device_offs() and not r.announcements()
+
+
+@pytest.mark.parametrize('sensor', SENSORS)
+@pytest.mark.parametrize('tv', ['on', 'unavailable'])
+def test_occupancy_then_vacancy_rearms_after_a_manual_cancel(sensor, tv):
+    r = Room(tv=tv)
+    r.empty()
+    r.advance(1000)
+    r.cancel()
+    r.advance(600)
+    r.set(**{sensor: 'on'})
+    assert r.states[CANCELLED] == 'off'
+    r.advance(60)
+    t0 = r.now
+    r.empty()
+    r.advance(1800)
+    expected = [(1800, 'light.turn_off')] + ([(1800, 'media_player.turn_off')] if tv == 'on' else [])
+    assert [(c[0] - t0, c[1]) for c in r.device_offs()] == expected
+    assert [c[0] - t0 for c in r.announcements() if c[0] >= t0] == ([900, 1200, 1500, 1740] if tv == 'on' else [])
+
+
+@pytest.mark.parametrize('state', ['off', 'unavailable'])
+def test_tv_turning_off_rearms_after_a_manual_cancel(state):
+    r = Room()
+    r.empty()
+    r.advance(1000)
+    r.cancel()
+    r.reload()
+    r.advance(500)
+    assert not r.device_offs() and r.states[CANCELLED] == 'on'
+    spoken = len(r.announcements())
+    t0 = r.now
+    r.set(**{TV: state})
+    assert r.states[CANCELLED] == 'off' and r.states[PENDING] == 'on'
+    r.advance(1800)
+    assert [(c[0] - t0, c[1]) for c in r.device_offs()] == [(1800, 'light.turn_off')]
+    assert len(r.announcements()) == spoken
+
+
+def test_tv_turning_off_with_lights_off_clears_the_cancel_and_rechecks_work_again():
+    r = Room(lights='off')
+    r.empty()
+    r.advance(1000)
+    r.cancel()
+    r.set(**{TV: 'off'})
+    assert r.states[CANCELLED] == 'off' and r.states[PENDING] == 'off'
+    r.advance(600)
+    t0 = r.now
+    r.set(**{LIGHTS[0]: 'on'})
+    r.advance(900)
+    assert [(c[0] - t0, c[1]) for c in r.device_offs()] == [(900, 'light.turn_off')]
+
+
+def test_automation_clearing_pending_is_never_a_manual_cancel():
+    r = Room(tv='unavailable')
+    r.empty()
+    r.advance(1800)  # a completed silent run clears pending itself
+    assert [c[1] for c in r.device_offs()] == ['light.turn_off']
+    assert r.states[CANCELLED] == 'off'
+    r.set(**{LIGHTS[0]: 'on'})  # so a recheck still starts a countdown
+    assert r.states[PENDING] == 'on'
+    r.advance(100)
+    r.set(**{SENSORS[0]: 'on'})  # occupancy clears pending itself too
+    assert r.states[PENDING] == 'off' and r.states[CANCELLED] == 'off'
+    r.set(**{SENSORS[0]: 'off'})
+    t0 = r.now
+    r.advance(1800)
+    assert [(c[0] - t0, c[1]) for c in r.device_offs()][-1] == (1800, 'light.turn_off')
+
+
+def test_manual_cancel_survives_ha_restart():
+    r = Room(tv='unavailable')
+    r.empty()
+    r.advance(1000)
+    r.cancel()
+    r.ha_start()
+    r.advance(4000)
+    assert not r.device_offs() and r.states[CANCELLED] == 'on'
 
 
 def test_both_mirrors_and_incident_rollback_remain_consistent():
