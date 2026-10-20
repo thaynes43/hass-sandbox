@@ -52,6 +52,7 @@ class Room:
         self.calls = []
         self.running = {}
         self.queue = []
+        self.timers = []  # state triggers with `for:` waiting to fire: [due, name, id, entity, to_states]
         self.latency = announcement_seconds
         self.fail_announce = False
         self.env = NativeEnvironment()
@@ -157,18 +158,31 @@ class Room:
                     fire = new and not self.edges[name, i]
                     self.edges[name, i] = new
                 elif t['trigger'] == 'state':
+                    to = t.get('to')
+                    to_states = to if isinstance(to, list) else None if to is None else [to]
                     for e in (t['entity_id'] if isinstance(t['entity_id'], list) else [t['entity_id']]):
                         old, new = previous.get(e), self.states.get(e)
-                        if (old != new and new == t.get('to', new)
-                                and old == t.get('from', old) and new not in t.get('not_to', [])):
-                            fire = True
-                            to_state = SimpleNamespace(state=new, context=SimpleNamespace(user_id=user))
+                        if (old != new and (to_states is None or new in to_states)
+                                and old == t.get('from', old) and old not in t.get('not_from', [])
+                                and new not in t.get('not_to', [])):
+                            if 'for' in t:
+                                self.timers.append([self.now + self.seconds(t['for']), name, t['id'], e, to_states])
+                            else:
+                                fire = True
+                                to_state = SimpleNamespace(state=new, context=SimpleNamespace(user_id=user))
                 if fire:
                     self.queue.append((name, t['id'], to_state))
 
     def set(self, **changes):
         self.update(changes)
         self.drain()
+
+    def fire_due_timers(self):
+        # A `for:` timer is cancelled as soon as its entity leaves the matched states.
+        self.timers = [x for x in self.timers if self.states.get(x[3]) in x[4]]
+        for x in [x for x in self.timers if x[0] <= self.now]:
+            self.timers.remove(x)
+            self.queue.append((x[1], x[2], None))
 
     def cancel(self):
         """A person turns the pending toggle off (dashboard/app call: context.user_id set)."""
@@ -185,6 +199,7 @@ class Room:
     def ha_start(self):
         """HA restart: every run dies, triggers re-attach, then the start event fires."""
         self.running.clear()
+        self.timers.clear()
         self.attach(*self.configs)
         self.fire('homeassistant', 'start')
 
@@ -241,7 +256,9 @@ class Room:
         end = self.now + seconds
         while self.now < end:
             deadlines = [r[1][0] for r in self.running.values() if r[1] and r[1][0] > self.now]
+            deadlines += [x[0] for x in self.timers if x[0] > self.now]
             self.now = min([end] + deadlines)
+            self.fire_due_timers()
             self.drain()
 
     def empty(self):
@@ -715,9 +732,12 @@ def test_tv_turning_off_rearms_after_a_manual_cancel(state):
     spoken = len(r.announcements())
     t0 = r.now
     r.set(**{TV: state})
+    r.advance(59)
+    assert r.states[CANCELLED] == 'on' and r.states[PENDING] == 'off'
+    r.advance(1)  # off for a minute: the cancel ends and a fresh full cycle starts
     assert r.states[CANCELLED] == 'off' and r.states[PENDING] == 'on'
     r.advance(1800)
-    assert [(c[0] - t0, c[1]) for c in r.device_offs()] == [(1800, 'light.turn_off')]
+    assert [(c[0] - t0, c[1]) for c in r.device_offs()] == [(1860, 'light.turn_off')]
     assert len(r.announcements()) == spoken
 
 
@@ -727,6 +747,7 @@ def test_tv_turning_off_with_lights_off_clears_the_cancel_and_rechecks_work_agai
     r.advance(1000)
     r.cancel()
     r.set(**{TV: 'off'})
+    r.advance(60)
     assert r.states[CANCELLED] == 'off' and r.states[PENDING] == 'off'
     r.advance(600)
     t0 = r.now
@@ -750,6 +771,42 @@ def test_automation_clearing_pending_is_never_a_manual_cancel():
     t0 = r.now
     r.advance(1800)
     assert [(c[0] - t0, c[1]) for c in r.device_offs()][-1] == (1800, 'light.turn_off')
+
+
+@pytest.mark.parametrize('blip', ['unavailable', 'off'])
+def test_tv_connection_blip_does_not_end_a_manual_cancel(blip):
+    r = Room()
+    r.empty()
+    r.advance(1000)
+    spoken = len(r.announcements())
+    r.cancel()
+    r.set(**{TV: blip})
+    r.advance(30)
+    r.set(**{TV: 'on'})
+    r.advance(4000)
+    assert r.states[CANCELLED] == 'on'
+    assert not r.device_offs() and len(r.announcements()) == spoken
+
+
+def test_occupancy_missed_during_a_restart_still_ends_a_manual_cancel():
+    r = Room(tv='unavailable')
+    r.empty()
+    r.advance(1000)
+    r.cancel()
+    r.states[SENSORS[0]] = 'on'  # someone walked in while HA was down: no edge is seen
+    r.ha_start()
+    assert r.states[CANCELLED] == 'off'
+    t0 = r.now
+    r.set(**{SENSORS[0]: 'off'})
+    r.advance(1800)
+    assert [(c[0] - t0, c[1]) for c in r.device_offs()] == [(1800, 'light.turn_off')]
+
+
+def test_pending_turned_off_while_someone_is_detected_does_not_stick():
+    r = Room()  # occupied
+    r.set(**{PENDING: 'on'})
+    r.cancel()
+    assert r.states[CANCELLED] == 'off'
 
 
 def test_manual_cancel_survives_ha_restart():
