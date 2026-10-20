@@ -68,7 +68,7 @@ wall switches and scene controllers already give people, and must not fight the 
 
 | Zone | Off delay | Motion ON | Notes |
 |---|---|---|---|
-| Movie Room | 5 min | none (off-only) | auto-off hits recessed **and** ambient |
+| Movie Room | 15 + 15 min (silent unless the TV is on) | none (off-only) | unified countdown; auto-off hits recessed **and** ambient; voice/app turn-on in an empty room starts the 15-min countdown at once |
 | Rumpus Room | 5 min | yes, ungated | fp2_01 excluded from the clear check (covers the movie side) |
 | Concessions | 30 s | yes, ungated, 2750 K/100 % | voice dim/off is overwritten within seconds unless held |
 | Hallway | 30 s | yes, hold-gated | driven from Rumpus ZEN37 buttons 3/4 together with Concessions |
@@ -112,14 +112,19 @@ ambient lights to blood moon" → `blood moon`, "Go back to the previous scene" 
 `voice_movie_room_color_toggle`'s description was also corrected: `script.toggle_hue_colors` steps
 the hue +20° at the same saturation; it never toggled colour/white.
 
-Media: coordinated TV and lights auto-off `automation.media_basement_movie_room_no_occupancy_tv_off`:
-both occupancy sensors must report empty; the current TV delay helper (20 min) preserves its old
-15-minute silent absence period, then satellite warnings give 15, 10, 5 and 1 minutes remaining.
-Shutdown follows at least 15 minutes after the first warning (nominal 30 minutes total, plus speech).
-Either sensor reporting occupancy or an invalid state, TV off/unavailable/unknown, or cancelling the
-pending toggle aborts the run. Light holds still protect lights without changing TV auto-off policy.
-The separate lights automation runs only after confirmed TV off, with a fresh five-minute empty-room
-delay; unknown/unavailable TV state alone cannot start it. No HA automation turns the TV/AVR on, but the AVR (Sony STR-AZ5000ES,
+Media: one unified TV and lights auto-off, `automation.media_basement_movie_room_no_occupancy_tv_off`,
+owns every Movie Room vacancy shutoff (since 2026-10-19). Both occupancy sensors must report empty and
+either the TV must be confirmed active (not off/unavailable/unknown) or a light group must be on with
+no hold. The TV delay helper (20 min) gives a 15-minute silent absence period, then a 15-minute
+countdown at 15, 10, 5 and 1 minutes. With the TV on, each step is a satellite warning, so shutdown
+follows at least 15 minutes after the first warning (nominal 30 minutes total, plus speech). A
+lights-only countdown is silent. A recheck (the hold released, HA start, an automation reload, a light
+group turning on) starts the countdown at once in an already-empty room, so lights go off 15 minutes
+later; it never restarts a running countdown. Either sensor reporting occupancy or an invalid state, a
+hold during a lights-only countdown, or cancelling the pending toggle aborts the run. A hold is LED1 at
+a hold colour or `automation.light_inovelli_movie_room_motion_cleared_lights_off` turned off; that
+automation no longer turns anything off itself. Holds protect lights without changing TV auto-off
+policy, and the TV is only sent `turn_off` when it is confirmed active. No HA automation turns the TV/AVR on, but the AVR (Sony STR-AZ5000ES,
 "Works with Sonos") **wakes itself** when the Sonos Port `media_player.movie_room` plays: power on
 after ~2 s, volume tracks the Port, input switches to `Sonos` (AVR recorder history, 2026-09-19
 17:08) — so music sent to this room is audible even with everything "off". Four AVR registrations:

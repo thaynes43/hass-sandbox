@@ -7,15 +7,20 @@ Run serially with fake time:
 nice -n 19 uv run --with jinja2 --with pyyaml --with pytest pytest -q scripts/automation-tests
 ```
 
-The bounded executor implements the YAML constructs used by these automations. It checks
-the full 15-minute silent absence delay plus 15/10/5/1-minute warnings, both-sensor
-aggregation, cancellation in each wait and during announcements, TV transitions,
-pending-toggle cancellation, light holds, failed announcements, and lights-only cleanup.
+The bounded executor implements the YAML constructs used by these automations, including the
+top-level condition checked before restart mode stops a run, and HA start and
+`automation_reloaded` events. It checks the full 15-minute silent absence delay plus the
+15/10/5/1-minute countdown, both-sensor aggregation, cancellation in each wait and during
+announcements, TV transitions, pending-toggle cancellation, light holds (LED1 colour or the
+lights automation turned off), failed announcements, the silent lights-only countdown (TV not
+confirmed active, including unavailable/unknown), and the recheck triggers: hold release,
+LED1 change, a light group turning on, HA start and automation reload. A recheck starts the
+countdown immediately in a vacant room and never restarts a running one.
 It is not a complete HA runtime. No CPU burners, stress tests or parallel test loops.
 
 `ha_runtime_probe.py` separately validates the original configurations with the installed
 HA validator and executes duration-shortened copies in a NEW isolated `HomeAssistant`
-object. Its service registry contains only fake handlers. It reads a JSON array of the
+object, including a silent lights-only run with the TV unavailable and a recheck run. Its service registry contains only fake handlers. It reads a JSON array of the
 TV and lights configurations from stdin; it requires HA's Python environment and is
 not imported by pytest or CI. The supported deployment is a separate operation through
 HA's automation config API, which reloads only the specified automation ID in the
