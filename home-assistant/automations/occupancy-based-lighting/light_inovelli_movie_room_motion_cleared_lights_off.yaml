@@ -1,64 +1,16 @@
 id: '1769402249599'
 alias: '[Light] [Inovelli] : [Movie Room] : [Motion Cleared] : [Lights Off]'
 description: |
-  TV-off-only empty-room lights cleanup. The coordinated TV automation owns
-  lights while TV is active. A confirmed TV off state with both sensors off and no
-  pending TV countdown starts a fresh configured lights delay (currently 5 minutes).
-  TV becoming active or either sensor ceasing to report off cancels this run.
-  After a confirmed off start, normal webOS off-to-unavailable is allowed during
-  the cleanup delay; unavailable/unknown alone never STARTS lights cleanup.
-  Manual/automation light holds are checked before and after the delay.
-triggers:
-  - trigger: template
-    id: lights_only
-    value_template: '{{ is_state(''binary_sensor.basement_movie_inovelli_presence_occupancy'', ''off'') and
-      is_state(''binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor'', ''off'') and is_state(''media_player.lg_webos_tv_oled83g4wua'',
-      ''off'') and is_state(''input_boolean.basement_movie_room_tv_auto_off_enabled'', ''off'') }}'
-  - trigger: template
-    id: cancel
-    value_template: '{{ not (is_state(''binary_sensor.basement_movie_inovelli_presence_occupancy'', ''off'')
-      and is_state(''binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor'', ''off'')) or states(''media_player.lg_webos_tv_oled83g4wua'')
-      not in [''off'', ''unavailable'', ''unknown''] }}'
+  Enable switch for Movie Room vacancy light shutoff ("No Motion Turns Off
+  Lights" on the dashboard). It has no triggers and turns nothing off itself:
+  the unified countdown, automation.media_basement_movie_room_no_occupancy_tv_off,
+  owns every vacancy shutoff (Tom, 2026-10-19). The separate silent 5-minute
+  TV-off lights cleanup that used to live here was removed.
+  While this automation is off (Cleaners Mode, the manual hold button or the
+  dashboard toggle), the countdown treats the lights as held and leaves them on.
+  Turning it back on makes the countdown re-check the room and, if it is
+  already vacant with lights on, start immediately.
+triggers: []
 conditions: []
-actions:
-  - condition: trigger
-    id: lights_only
-  - condition: template
-    value_template: |
-      {# Only run when hold is clear #}
-      {% set s = 'basement_movie_inovelli_presence' %}
-      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
-      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
-      {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
-      {{ led1 != manual and led1 != auto }}
-  - delay: '{% set raw = states(''input_select.basement_movie_room_occupancy_off_delay'') %} {% set d = raw
-      | replace(''"'','''') | replace("''","") | trim %} {{ d if d not in [''unknown'',''unavailable'','''']
-      else ''00:05:00'' }}'
-  - condition: template
-    value_template: |
-      {{
-        is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off')
-        and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off')
-      }}
-  - condition: template
-    value_template: |
-      {# Re-check hold state after the delay #}
-      {% set s = 'basement_movie_inovelli_presence' %}
-      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
-      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
-      {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
-      {{ led1 != manual and led1 != auto }}
-  - condition: state
-    entity_id: media_player.lg_webos_tv_oled83g4wua
-    state:
-      - 'off'
-      - unavailable
-  - condition: state
-    entity_id: input_boolean.basement_movie_room_tv_auto_off_enabled
-    state: 'off'
-  - action: light.turn_off
-    target:
-      entity_id:
-        - light.basement_movie_room_lights
-        - light.basement_movie_room_ambient_lighting
+actions: []
 mode: restart

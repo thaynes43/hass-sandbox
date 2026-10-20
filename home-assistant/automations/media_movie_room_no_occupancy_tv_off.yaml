@@ -1,17 +1,31 @@
 id: '1770265925289'
 alias: '[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]'
 description: |
-  Coordinated empty-room TV and lights shutdown. Both sensors must report off.
-  Preserve the old silent absence delay: max(TV delay helper minus 5 minutes, 0),
-  currently 15 minutes with the existing 00:20:00 helper. Then announce 15, 10, 5,
-  and 1 minutes remaining, waiting 5/5/4/1 minutes AFTER each successful announcement.
-  Thus at least 15 minutes follow the first warning; nominal total absence is 30
-  minutes plus announcement durations. Occupancy, invalid sensor state, TV off or
-  unavailable/unknown, or cancelling the pending toggle aborts the entire run.
-  TV becoming active while already empty starts a fresh full cycle. Light holds
-  still protect the lights; they do not change the existing TV auto-off policy.
-  No actions continue after a failed announcement. TV-off lights-only cleanup is
-  owned by the separately guarded lights automation with a fresh delay.
+  Unified empty-room shutdown for the Movie Room. It owns every vacancy shutoff
+  of the TV and both light groups; nothing else turns them off early.
+  Armed while BOTH sensors report off and either the TV is confirmed active
+  (anything but off/unavailable/unknown) or a Movie Room light group is on with
+  no light hold. A hold is LED1 at the manual/auto hold colour, or the lights
+  automation (No Motion Turns Off Lights) being off: Cleaners Mode, the manual
+  hold button or the dashboard toggle. Its brief unavailable state while it is
+  reloaded is not a hold.
+  A vacancy edge waits a silent absence window of max(TV delay helper minus 5
+  minutes, 0), currently 15 minutes, then counts down 15, 10, 5 and 1 minutes,
+  waiting 5/5/4/1 minutes AFTER each step. With the TV confirmed active each step
+  is announced, so at least 15 minutes follow the first warning. A lights-only
+  countdown (TV not confirmed active) is silent with the same timing.
+  Recheck triggers (lights automation re-enabled, any LED1 change, HA start,
+  any automation reload, either light group turning on) skip the absence window
+  and start the countdown immediately when the room is already vacant, but never
+  interrupt a countdown that is running. A recheck can re-arm a countdown that
+  was cancelled with the pending toggle while the room still reads vacant.
+  Occupancy or any sensor not reporting off, a hold during a lights-only
+  countdown, or cancelling the pending toggle aborts the whole run. Lights go
+  off only at the final hold-checked step; the TV off command is sent only when
+  the TV is confirmed active. TV unavailable/unknown is neither active nor an
+  exemption. A TV active/inactive edge starts a fresh full cycle. Light holds
+  never change the TV auto-off policy. No actions continue after a failed
+  announcement.
 triggers:
   - trigger: template
     id: room_empty
@@ -33,14 +47,42 @@ triggers:
     entity_id: input_boolean.basement_movie_room_tv_auto_off_enabled
     to: 'off'
     id: pending_cancelled
-conditions: []
+  - alias: Hold released (Cleaners Mode clear-hold, manual hold button or dashboard toggle)
+    trigger: state
+    entity_id: automation.light_inovelli_movie_room_motion_cleared_lights_off
+    from: 'off'
+    to: 'on'
+    id: recheck
+  - alias: LED1 changed (a hold-clear script can re-enable the automation before LED1 confirms)
+    trigger: state
+    entity_id: number.basement_movie_inovelli_presence_defaultled1colorwhenon
+    not_to:
+      - unavailable
+      - unknown
+    id: recheck
+  - alias: A Movie Room light group turned on (paddle, app, voice or dashboard)
+    trigger: state
+    entity_id:
+      - light.basement_movie_room_lights
+      - light.basement_movie_room_ambient_lighting
+    to: 'on'
+    id: recheck
+  - trigger: homeassistant
+    event: start
+    id: recheck
+  - trigger: event
+    event_type: automation_reloaded
+    id: recheck
+conditions:
+  - alias: A recheck never interrupts a countdown in progress
+    condition: template
+    value_template: "{{ trigger.id != 'recheck' or (this.attributes.current | int(0)) == 0 }}"
 actions:
   - choose:
       - conditions:
           - condition: trigger
             id:
               - room_not_empty
-              - tv_inactive
               - pending_cancelled
         sequence:
           - &clear_pending
@@ -52,20 +94,20 @@ actions:
             id:
               - room_empty
               - tv_active
-          - condition: state
-            entity_id: binary_sensor.basement_movie_inovelli_presence_occupancy
-            state: 'off'
-          - condition: state
-            entity_id: binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor
-            state: 'off'
-          - condition: not
-            conditions:
-              - condition: state
-                entity_id: media_player.lg_webos_tv_oled83g4wua
-                state:
-                  - 'off'
-                  - unavailable
-                  - unknown
+              - tv_inactive
+              - recheck
+          - alias: Vacant, and TV confirmed active or lights on with no hold
+            condition: template
+            value_template: >-
+              {% set tv = states('media_player.lg_webos_tv_oled83g4wua') %}
+              {% set led = states('number.basement_movie_inovelli_presence_defaultled1colorwhenon') | int(-1) %}
+              {% set held = is_state('automation.light_inovelli_movie_room_motion_cleared_lights_off', 'off')
+                 or led in [states('input_text.inovelli_manual_hold') | int(85), states('input_text.inovelli_auto_hold') | int(0)] %}
+              {% set lights = is_state('light.basement_movie_room_lights', 'on')
+                 or is_state('light.basement_movie_room_ambient_lighting', 'on') %}
+              {{ is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off')
+                 and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off')
+                 and (tv not in ['off', 'unavailable', 'unknown'] or (lights and not held)) }}
         sequence:
           - alias: Abort the whole shutdown on any service failure; always clear pending
             continue_on_error: true
@@ -83,41 +125,28 @@ actions:
                     {% set td = as_timedelta(d) %}
                     {% set total_s = (td.total_seconds() | int(1200)) %}
                     {% set pre = (total_s - 300) %}
-                    {{ pre if pre > 0 else 0 }}
-              - wait_template: '{{ not (is_state(''binary_sensor.basement_movie_inovelli_presence_occupancy'',
-                  ''off'') and is_state(''binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor'',
-                  ''off'') and states(''media_player.lg_webos_tv_oled83g4wua'') not in [''off'', ''unavailable'',
-                  ''unknown''] and is_state(''input_boolean.basement_movie_room_tv_auto_off_enabled'', ''on''))
-                  }}'
+                    {{ 0 if trigger.id == 'recheck' else (pre if pre > 0 else 0) }}
+              - wait_template: &disarmed >-
+                  {% set tv = states('media_player.lg_webos_tv_oled83g4wua') %}
+                  {% set led = states('number.basement_movie_inovelli_presence_defaultled1colorwhenon') | int(-1) %}
+                  {% set held = is_state('automation.light_inovelli_movie_room_motion_cleared_lights_off', 'off')
+                     or led in [states('input_text.inovelli_manual_hold') | int(85), states('input_text.inovelli_auto_hold') | int(0)] %}
+                  {% set lights = is_state('light.basement_movie_room_lights', 'on')
+                     or is_state('light.basement_movie_room_ambient_lighting', 'on') %}
+                  {{ not (is_state('binary_sensor.basement_movie_inovelli_presence_occupancy', 'off')
+                     and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor', 'off')
+                     and (tv not in ['off', 'unavailable', 'unknown'] or (lights and not held))
+                     and is_state('input_boolean.basement_movie_room_tv_auto_off_enabled', 'on')) }}
                 timeout:
                   seconds: '{{ pre_warning_seconds | int(0) }}'
                 continue_on_timeout: true
               - &cancel_if_invalid
                 if:
-                  - condition: not
-                    conditions:
-                      - condition: and
-                        conditions:
-                          - condition: state
-                            entity_id: binary_sensor.basement_movie_inovelli_presence_occupancy
-                            state: 'off'
-                          - condition: state
-                            entity_id: binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor
-                            state: 'off'
-                          - condition: not
-                            conditions:
-                              - condition: state
-                                entity_id: media_player.lg_webos_tv_oled83g4wua
-                                state:
-                                  - 'off'
-                                  - unavailable
-                                  - unknown
-                          - condition: state
-                            entity_id: input_boolean.basement_movie_room_tv_auto_off_enabled
-                            state: 'on'
+                  - condition: template
+                    value_template: *disarmed
                 then:
                   - *clear_pending
-                  - stop: 'Shutdown cancelled: occupancy, TV state, or pending toggle changed'
+                  - stop: 'Shutdown cancelled: occupancy, TV state, light hold, or pending toggle changed'
               - repeat:
                   for_each:
                     - remaining: 15
@@ -130,32 +159,41 @@ actions:
                       wait: 1
                   sequence:
                     - *cancel_if_invalid
-                    - action: assist_satellite.announce
-                      target:
-                        entity_id: assist_satellite.movie_room_voice_assist_satellite
-                      data:
-                        preannounce: true
-                        message: Movie Room appears empty. Turning off the TV and lights in {{ repeat.item.remaining
-                          }} minute{{ '' if repeat.item.remaining == 1 else 's' }}.
-                    - wait_template: '{{ not (is_state(''binary_sensor.basement_movie_inovelli_presence_occupancy'',
-                        ''off'') and is_state(''binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor'',
-                        ''off'') and states(''media_player.lg_webos_tv_oled83g4wua'') not in [''off'', ''unavailable'',
-                        ''unknown''] and is_state(''input_boolean.basement_movie_room_tv_auto_off_enabled'',
-                        ''on'')) }}'
+                    - alias: Speak only when the TV is confirmed active; a lights-only countdown is silent
+                      if:
+                        - &tv_confirmed_active
+                          condition: not
+                          conditions:
+                            - condition: state
+                              entity_id: media_player.lg_webos_tv_oled83g4wua
+                              state:
+                                - 'off'
+                                - unavailable
+                                - unknown
+                      then:
+                        - action: assist_satellite.announce
+                          target:
+                            entity_id: assist_satellite.movie_room_voice_assist_satellite
+                          data:
+                            preannounce: true
+                            message: Movie Room appears empty. Turning off the TV and lights in {{ repeat.item.remaining
+                              }} minute{{ '' if repeat.item.remaining == 1 else 's' }}.
+                    - wait_template: *disarmed
                       timeout:
                         minutes: '{{ repeat.item.wait }}'
                       continue_on_timeout: true
                     - *cancel_if_invalid
               - *cancel_if_invalid
               - if:
-                  - condition: template
+                  - alias: No light hold (LED1 hold colour or lights automation off)
+                    condition: template
                     value_template: |
-                      {# Only run when hold is clear #}
                       {% set s = 'basement_movie_inovelli_presence' %}
                       {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
                       {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
                       {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
-                      {{ led1 != manual and led1 != auto }}
+                      {{ led1 != manual and led1 != auto
+                         and not is_state('automation.light_inovelli_movie_room_motion_cleared_lights_off', 'off') }}
                 then:
                   - *cancel_if_invalid
                   - action: light.turn_off
@@ -163,9 +201,17 @@ actions:
                       entity_id:
                         - light.basement_movie_room_lights
                         - light.basement_movie_room_ambient_lighting
-              - *cancel_if_invalid
-              - action: media_player.turn_off
-                target:
-                  entity_id: media_player.lg_webos_tv_oled83g4wua
+              - alias: TV off command only when the TV is confirmed active
+                if:
+                  - *tv_confirmed_active
+                then:
+                  - *cancel_if_invalid
+                  - action: media_player.turn_off
+                    target:
+                      entity_id: media_player.lg_webos_tv_oled83g4wua
           - *clear_pending
+    default:
+      - *clear_pending
+trace:
+  stored_traces: 20
 mode: restart
