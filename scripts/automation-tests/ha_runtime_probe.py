@@ -41,11 +41,11 @@ def shorten_waits(node):
 
 
 async def probe(hass, configs, fail_warning=False, hold=None, occupied=False, tv='on',
-                trigger_id='room_empty'):
+                trigger_id='room_empty', lights_automation='on'):
     calls = []
     for entity, state in {TV: tv, PENDING: 'off', SENSORS[0]: 'off', SENSORS[1]: 'off',
                           LED: hold or '255', 'input_text.inovelli_manual_hold': '90',
-                          'input_text.inovelli_auto_hold': '130', LIGHTS_AUTOMATION: 'on',
+                          'input_text.inovelli_auto_hold': '130', LIGHTS_AUTOMATION: lights_automation,
                           LIGHTS[0]: 'on', LIGHTS[1]: 'off',
                           'input_select.basement_movie_room_tv_auto_off_delay': '00:20:00'}.items():
         hass.states.async_set(entity, state)
@@ -77,7 +77,10 @@ async def probe(hass, configs, fail_warning=False, hold=None, occupied=False, tv
     warnings = [c for c in calls if c[0] == 'assist_satellite']
     offs = [c[0] for c in calls if c[0] in ['light', 'media_player']]
     assert hass.states.get(PENDING).state == 'off', calls
-    if tv != 'on':
+    if tv != 'on' and lights_automation == 'off':
+        # The lights automation turned off is a hold: no lights-only countdown at all.
+        assert not warnings and not offs, calls
+    elif tv != 'on':
         # Lights-only countdown: silent, lights off, never a TV command.
         assert not warnings and offs == ['light'], calls
     elif fail_warning or occupied:
@@ -86,7 +89,7 @@ async def probe(hass, configs, fail_warning=False, hold=None, occupied=False, tv
         assert len(warnings) == 4, calls
         assert offs == (['media_player'] if hold else ['light', 'media_player']), calls
     print(f'Isolated HA Script OK: fail_warning={fail_warning}, hold={hold}, occupied={occupied}, '
-          f'tv={tv}, trigger={trigger_id}')
+          f'tv={tv}, trigger={trigger_id}, lights_automation={lights_automation}')
 
 
 async def main():
@@ -106,6 +109,7 @@ async def main():
     await probe(hass, configs, occupied=True)
     await probe(hass, configs, tv='unavailable')
     await probe(hass, configs, tv='off', trigger_id='recheck')
+    await probe(hass, configs, tv='unavailable', trigger_id='recheck', lights_automation='off')
 
 
 if __name__ == '__main__':

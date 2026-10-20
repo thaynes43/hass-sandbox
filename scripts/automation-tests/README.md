@@ -20,7 +20,11 @@ It is not a complete HA runtime. No CPU burners, stress tests or parallel test l
 
 `ha_runtime_probe.py` separately validates the original configurations with the installed
 HA validator and executes duration-shortened copies in a NEW isolated `HomeAssistant`
-object, including a silent lights-only run with the TV unavailable and a recheck run. Its service registry contains only fake handlers. It reads a JSON array of the
+object, including a silent lights-only run with the TV unavailable and the lights-automation
+hold. It runs the actions only, with every wait shortened, so it does not exercise the
+top-level "never restart a running countdown" condition or the recheck's skipped absence
+window; the fake-time tests cover those, and the condition was also seen live
+(`failed_conditions` on a reload during a running countdown, 2026-10-19). Its service registry contains only fake handlers. It reads a JSON array of the
 TV and lights configurations from stdin; it requires HA's Python environment and is
 not imported by pytest or CI. The supported deployment is a separate operation through
 HA's automation config API, which reloads only the specified automation ID in the

@@ -389,7 +389,7 @@ def test_confirmed_active_tv_gets_spoken_countdown_and_tv_off(tv):
 
 
 @pytest.mark.parametrize('tv', ['unavailable', 'unknown'])
-def test_tv_unavailable_is_neither_active_nor_a_hold_exemption(tv):
+def test_tv_unavailable_is_not_active_and_does_not_override_a_hold(tv):
     # Lights off: an unavailable TV starts nothing and is never sent a command.
     r = Room(tv=tv, lights='off')
     r.empty()

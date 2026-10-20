@@ -14,10 +14,11 @@ description: |
   waiting 5/5/4/1 minutes AFTER each step. With the TV confirmed active each step
   is announced, so at least 15 minutes follow the first warning. A lights-only
   countdown (TV not confirmed active) is silent with the same timing.
-  Recheck triggers (lights automation re-enabled or LED1 changed after a hold,
-  HA start, automation reload, either light group turning on) skip the absence window and
-  start the countdown immediately when the room is already vacant, but never
-  interrupt a countdown that is running.
+  Recheck triggers (lights automation re-enabled, any LED1 change, HA start,
+  any automation reload, either light group turning on) skip the absence window
+  and start the countdown immediately when the room is already vacant, but never
+  interrupt a countdown that is running. A recheck can re-arm a countdown that
+  was cancelled with the pending toggle while the room still reads vacant.
   Occupancy or any sensor not reporting off, a hold during a lights-only
   countdown, or cancelling the pending toggle aborts the whole run. Lights go
   off only at the final hold-checked step; the TV off command is sent only when
