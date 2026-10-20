@@ -20,6 +20,7 @@ SENSORS = ['binary_sensor.basement_movie_inovelli_presence_occupancy',
            'binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor']
 LIGHTS = ['light.basement_movie_room_lights', 'light.basement_movie_room_ambient_lighting']
 LED = 'number.basement_movie_inovelli_presence_defaultled1colorwhenon'
+LIGHTS_AUTOMATION = 'automation.light_inovelli_movie_room_motion_cleared_lights_off'
 TV_PATH = ROOT / 'home-assistant/automations/tv-timers/media_basement_movie_room_no_occupancy_tv_off.yaml'
 LIGHT_PATH = ROOT / 'home-assistant/automations/occupancy-based-lighting/light_inovelli_movie_room_motion_cleared_lights_off.yaml'
 
@@ -33,11 +34,15 @@ class ServiceFailure(Exception):
 
 
 class Room:
-    """Restart-mode automation executor, driven by state edges and fake deadlines."""
-    def __init__(self, tv='on', announcement_seconds=0):
+    """Restart-mode automation executor, driven by state edges and fake deadlines.
+
+    Starts occupied, with the recessed group on, the ambient group off and no hold.
+    """
+    def __init__(self, tv='on', announcement_seconds=0, lights='on'):
         self.configs = {'tv': yaml.safe_load(TV_PATH.read_text()),
                         'lights': yaml.safe_load(LIGHT_PATH.read_text())}
         self.states = {TV: tv, PENDING: 'off', SENSORS[0]: 'on', SENSORS[1]: 'on',
+                       LIGHTS[0]: lights, LIGHTS[1]: 'off', LIGHTS_AUTOMATION: 'on',
                        LED: '255', 'input_text.inovelli_manual_hold': '90',
                        'input_text.inovelli_auto_hold': '130',
                        'input_select.basement_movie_room_tv_auto_off_delay': '00:20:00',
@@ -52,9 +57,15 @@ class Room:
         self.env.globals.update(states=lambda e: self.states.get(e, 'unknown'),
                                 is_state=lambda e, s: self.states.get(e) == s,
                                 as_timedelta=lambda s: timedelta(seconds=self.seconds(s)))
-        self.edges = {(name, i): bool(self.render(t['value_template'], {}))
-                      for name, c in self.configs.items() for i, t in enumerate(c['triggers'])
-                      if t['trigger'] == 'template'}
+        self.edges = {}
+        self.attach(*self.configs)
+
+    def attach(self, *names):
+        """(Re)attach template triggers. HA never fires one that is already true on attach."""
+        for name in names:
+            for i, t in enumerate(self.configs[name]['triggers']):
+                if t['trigger'] == 'template':
+                    self.edges[name, i] = bool(self.render(t['value_template'], {}))
 
     def render(self, value, variables):
         if isinstance(value, str) and ('{{' in value or '{%' in value):
@@ -88,6 +99,8 @@ class Room:
             return all(self.condition(x, v) for x in c['conditions'])
         if kind == 'not':
             return not any(self.condition(x, v) for x in c['conditions'])
+        if kind == 'or':
+            return any(self.condition(x, v) for x in c['conditions'])
         raise AssertionError(kind)
 
     def sequence(self, steps, v):
@@ -102,6 +115,8 @@ class Room:
                     if self.condition(branch['conditions'], v):
                         yield from self.sequence(branch['sequence'], v)
                         break
+                else:
+                    yield from self.sequence(a.get('default', []), v)
             elif 'if' in a:
                 yield from self.sequence(a.get('then' if self.condition(a['if'], v) else 'else', []), v)
             elif 'variables' in a:
@@ -139,8 +154,10 @@ class Room:
                     fire = new and not self.edges[name, i]
                     self.edges[name, i] = new
                 elif t['trigger'] == 'state':
-                    e = t['entity_id']
-                    fire = previous.get(e) != self.states.get(e) and self.states.get(e) == t['to']
+                    for e in (t['entity_id'] if isinstance(t['entity_id'], list) else [t['entity_id']]):
+                        old, new = previous.get(e), self.states.get(e)
+                        fire = fire or (old != new and new == t.get('to', new)
+                                        and old == t.get('from', old) and new not in t.get('not_to', []))
                 if fire:
                     self.queue.append((name, t['id']))
 
@@ -148,12 +165,36 @@ class Room:
         self.update(changes)
         self.drain()
 
+    def fire(self, kind, value):
+        for name, c in self.configs.items():
+            for t in c['triggers']:
+                if t['trigger'] == kind and value in (t.get('event'), t.get('event_type')):
+                    self.queue.append((name, t['id']))
+        self.drain()
+
+    def ha_start(self):
+        """HA restart: every run dies, triggers re-attach, then the start event fires."""
+        self.running.clear()
+        self.attach(*self.configs)
+        self.fire('homeassistant', 'start')
+
+    def reload(self, name=None):
+        """Reload one automation (None = an unrelated one), then HA fires automation_reloaded."""
+        if name:
+            self.running.pop(name, None)
+            self.attach(name)
+        self.fire('event', 'automation_reloaded')
+
     def drain(self):
         for _ in range(100):  # safety bound on immediate actions, no CPU/load loops
             while self.queue:
                 name, trigger = self.queue.pop(0)
                 assert self.configs[name]['mode'] == 'restart'
-                self.running[name] = [self.sequence(self.configs[name]['actions'], {'trigger': SimpleNamespace(id=trigger)}), None]
+                v = {'trigger': SimpleNamespace(id=trigger),
+                     'this': {'attributes': {'current': int(name in self.running)}}}
+                if not self.condition(self.configs[name].get('conditions', []), v):
+                    continue  # conditions fail before restart mode stops a run
+                self.running[name] = [self.sequence(self.configs[name]['actions'], v), None]
             progress = False
             for name, run in list(self.running.items()):
                 wait = run[1]
@@ -175,6 +216,8 @@ class Room:
                         self.update({target: 'on' if service.endswith('turn_on') else 'off'})
                     elif service == 'media_player.turn_off':
                         self.update({TV: 'off'})
+                    elif service == 'light.turn_off':
+                        self.update({light: 'off' for light in target})
                     elif service == 'assist_satellite.announce':
                         if self.latency and not self.fail_announce:
                             run[1] = (self.now + self.latency, None, {})
@@ -196,6 +239,9 @@ class Room:
 
     def device_offs(self):
         return [c for c in self.calls if c[1] in ['light.turn_off', 'media_player.turn_off']]
+
+    def announcements(self):
+        return [c for c in self.calls if c[1] == 'assist_satellite.announce']
 
 
 def test_warning_schedule_and_coordinated_shutdown():
@@ -242,27 +288,36 @@ def test_pending_toggle_cancels(at):
 
 @pytest.mark.parametrize('at', [100, 1100, 1400, 1700, 1799])
 @pytest.mark.parametrize('state', ['off', 'unavailable', 'unknown'])
-def test_tv_inactive_cancels_and_only_confirmed_off_starts_fresh_cleanup(at, state):
-    r = Room()
+@pytest.mark.parametrize('lights', ['on', 'off'])
+def test_tv_inactive_mid_countdown_hands_over_to_fresh_silent_lights_countdown(at, state, lights):
+    r = Room(lights=lights)
     r.empty()
     r.advance(at)
+    spoken = len(r.announcements())
     r.set(**{TV: state})
-    assert r.states[PENDING] == 'off'
-    r.advance(299)
-    assert not r.device_offs()
-    r.advance(1)
-    assert [c[1] for c in r.device_offs()] == (['light.turn_off'] if state == 'off' else [])
+    if lights == 'off':
+        assert r.states[PENDING] == 'off'
+        r.advance(4000)
+        assert not r.device_offs()
+    else:
+        assert r.states[PENDING] == 'on'
+        r.advance(1799)
+        assert not r.device_offs()
+        r.advance(1)
+        assert [(c[0], c[1]) for c in r.device_offs()] == [(at + 1800, 'light.turn_off')]
+        assert r.states[PENDING] == 'off'
+    assert len(r.announcements()) == spoken
 
 
-def test_off_to_unavailable_after_confirmed_off_still_cleans_up():
+def test_off_to_unavailable_during_lights_only_countdown_does_not_restart_it():
     r = Room()
     r.empty()
     r.advance(1100)
     r.set(**{TV: 'off'})
     r.advance(120)
     r.set(**{TV: 'unavailable'})
-    r.advance(180)
-    assert [(c[0], c[1]) for c in r.device_offs()] == [(1400, 'light.turn_off')]
+    r.advance(1680)
+    assert [(c[0], c[1]) for c in r.device_offs()] == [(2900, 'light.turn_off')]
 
 
 def test_tv_turns_on_during_lights_cleanup_gets_full_warned_cycle():
@@ -285,14 +340,16 @@ def test_one_occupied_sensor_prevents_any_countdown(sensor):
     assert r.states[PENDING] == 'off'
 
 
+@pytest.mark.parametrize('at', [299, 1100, 1799])
 @pytest.mark.parametrize('sensor', SENSORS)
 @pytest.mark.parametrize('value', ['on', 'unknown', 'unavailable'])
-def test_lights_only_cleanup_cancelled_by_either_sensor(sensor, value):
+def test_lights_only_countdown_cancelled_by_either_sensor(at, sensor, value):
     r = Room(tv='off')
     r.empty()
-    r.advance(299)
+    r.advance(at)
     r.set(**{sensor: value})
-    r.advance(500)
+    assert r.states[PENDING] == 'off'
+    r.advance(4000)
     assert not r.device_offs()
 
 
@@ -307,35 +364,84 @@ def test_tv_playback_state_changes_do_not_reset_countdown():
     assert [c[0] for c in r.device_offs()] == [1800, 1800]
 
 
-@pytest.mark.parametrize('tv', ['on', 'playing', 'paused', 'unavailable', 'unknown'])
-def test_lights_worker_does_not_start_without_confirmed_tv_off(tv):
+@pytest.mark.parametrize('tv', ['off', 'unavailable', 'unknown'])
+def test_lights_only_countdown_is_silent_with_unified_timing_and_no_tv_command(tv):
     r = Room(tv=tv)
     r.empty()
-    r.advance(301)
+    r.advance(299)
+    assert not r.device_offs()  # the separate 5-minute lights cleanup is gone
+    r.advance(1500)
     assert not r.device_offs()
+    assert r.states[PENDING] == 'on'
+    r.advance(1)
+    assert [(c[0], c[1], c[2]) for c in r.device_offs()] == [(1800, 'light.turn_off', LIGHTS)]
+    assert not r.announcements()
+    assert r.states[PENDING] == 'off'
 
 
-@pytest.mark.parametrize('hold', ['90', '130'])
-@pytest.mark.parametrize('when', [0, 299])
-def test_lights_only_holds_before_and_after_delay(hold, when):
+@pytest.mark.parametrize('tv', ['on', 'playing', 'paused'])
+def test_confirmed_active_tv_gets_spoken_countdown_and_tv_off(tv):
+    r = Room(tv=tv)
+    r.empty()
+    r.advance(1800)
+    assert [c[0] for c in r.announcements()] == [900, 1200, 1500, 1740]
+    assert [(c[0], c[1]) for c in r.device_offs()] == [(1800, 'light.turn_off'), (1800, 'media_player.turn_off')]
+
+
+@pytest.mark.parametrize('tv', ['unavailable', 'unknown'])
+def test_tv_unavailable_is_neither_active_nor_a_hold_exemption(tv):
+    # Lights off: an unavailable TV starts nothing and is never sent a command.
+    r = Room(tv=tv, lights='off')
+    r.empty()
+    r.advance(4000)
+    assert not r.device_offs() and not r.announcements()
+    assert r.states[PENDING] == 'off'
+    # Lights on with a hold: an unavailable TV does not override the hold.
+    r = Room(tv=tv)
+    r.set(**{LED: '130'})
+    r.empty()
+    r.advance(4000)
+    assert not r.device_offs() and not r.announcements()
+    assert r.states[PENDING] == 'off'
+
+
+HOLDS = [{LED: '90'}, {LED: '130'}, {LIGHTS_AUTOMATION: 'off'}]
+
+
+@pytest.mark.parametrize('hold', HOLDS)
+@pytest.mark.parametrize('when', [0, 299, 1100, 1799])
+def test_lights_only_hold_blocks_or_cancels_countdown(hold, when):
     r = Room(tv='off')
     if when == 0:
-        r.set(**{LED: hold})
+        r.set(**hold)
     r.empty()
     r.advance(when)
-    r.set(**{LED: hold})
-    r.advance(400)
+    r.set(**hold)
+    assert r.states[PENDING] == 'off'
+    r.advance(4000)
     assert not r.device_offs()
 
 
-@pytest.mark.parametrize('hold', ['90', '130'])
+@pytest.mark.parametrize('hold', HOLDS)
 def test_coordinated_shutdown_preserves_light_hold_but_tv_policy_unchanged(hold):
     r = Room()
     r.empty()
     r.advance(1799)
-    r.set(**{LED: hold})
+    r.set(**hold)
     r.advance(1)
     assert [c[1] for c in r.device_offs()] == ['media_player.turn_off']
+    r.advance(4000)
+    assert [c[1] for c in r.device_offs()] == ['media_player.turn_off']
+
+
+def test_lights_turned_off_by_hand_cancel_lights_only_countdown():
+    r = Room(tv='unavailable')
+    r.empty()
+    r.advance(1000)
+    r.set(**{LIGHTS[0]: 'off'})
+    assert r.states[PENDING] == 'off'
+    r.advance(4000)
+    assert not r.device_offs()
 
 
 def test_occupancy_during_announcement_cancels_shutdown():
@@ -375,6 +481,159 @@ def test_reoccupancy_then_empty_starts_a_fresh_full_cycle():
     assert not r.device_offs()
     r.advance(1)
     assert all(c[0] == 2810 for c in r.device_offs())
+
+
+def held_vacant_lit_room(hold, tv='unavailable', hours=4):
+    """The 2026-10-19 state: a hold is set, the room empties with lights on, hours pass."""
+    r = Room(tv=tv)
+    r.set(**hold)
+    r.empty()
+    r.advance(hours * 3600)
+    assert not r.device_offs() and r.states[PENDING] == 'off'
+    return r
+
+
+@pytest.mark.parametrize('tv', ['unavailable', 'off', 'unknown'])
+@pytest.mark.parametrize('hold_led', ['90', '130'])
+def test_hold_release_rechecks_vacant_room_and_starts_silent_countdown_immediately(tv, hold_led):
+    r = held_vacant_lit_room({LED: hold_led, LIGHTS_AUTOMATION: 'off'}, tv=tv)
+    t0 = r.now
+    r.set(**{LED: '255'})  # the clear-hold scripts restore LED1 first ...
+    assert r.states[PENDING] == 'off'  # ... while the automation is still off
+    r.set(**{LIGHTS_AUTOMATION: 'on'})  # ... then re-enable the automation
+    assert r.states[PENDING] == 'on'
+    r.advance(899)
+    assert not r.device_offs()
+    r.advance(1)
+    assert [(c[0] - t0, c[1], c[2]) for c in r.device_offs()] == [(900, 'light.turn_off', LIGHTS)]
+    assert not r.announcements()
+    assert r.states[PENDING] == 'off'
+
+
+def test_hold_release_with_late_led_confirmation_still_rechecks():
+    r = held_vacant_lit_room({LED: '130', LIGHTS_AUTOMATION: 'off'})
+    t0 = r.now
+    r.set(**{LIGHTS_AUTOMATION: 'on'})  # re-enabled after the scripts' 5 s LED wait timed out
+    assert r.states[PENDING] == 'off'  # LED1 still shows the hold colour
+    r.advance(10)
+    r.set(**{LED: '255'})
+    r.advance(900)
+    assert [(c[0] - t0, c[1]) for c in r.device_offs()] == [(910, 'light.turn_off')]
+    assert not r.announcements()
+
+
+@pytest.mark.parametrize('group', LIGHTS)
+@pytest.mark.parametrize('tv', ['unavailable', 'off'])
+def test_lights_turned_on_in_empty_room_start_silent_countdown_immediately(group, tv):
+    r = Room(tv=tv, lights='off')
+    r.empty()
+    r.advance(3600)
+    t0 = r.now
+    r.set(**{group: 'on'})
+    assert r.states[PENDING] == 'on'
+    r.advance(899)
+    assert not r.device_offs()
+    r.advance(1)
+    assert [(c[0] - t0, c[1], c[2]) for c in r.device_offs()] == [(900, 'light.turn_off', LIGHTS)]
+    assert not r.announcements()
+
+
+@pytest.mark.parametrize('recheck', ['ha_start', 'reload_self', 'reload_other'])
+def test_start_and_reload_recheck_a_vacant_lit_room(recheck):
+    r = Room(tv='unavailable', lights='off')
+    r.empty()
+    r.advance(3600)
+    r.states[LIGHTS[0]] = 'on'  # e.g. restored on during a restart, no edge seen
+    t0 = r.now
+    getattr(r, 'ha_start' if recheck == 'ha_start' else 'reload')(
+        *(['tv'] if recheck == 'reload_self' else []))
+    assert r.states[PENDING] == 'on'
+    r.advance(900)
+    assert [(c[0] - t0, c[1]) for c in r.device_offs()] == [(900, 'light.turn_off')]
+    assert not r.announcements()
+
+
+@pytest.mark.parametrize('recheck', ['ha_start', 'reload_self'])
+@pytest.mark.parametrize('tv', ['on', 'unavailable'])
+def test_killed_countdown_is_recovered_immediately(recheck, tv):
+    r = Room(tv=tv)
+    r.empty()
+    r.advance(1000)
+    t0 = r.now
+    getattr(r, 'ha_start' if recheck == 'ha_start' else 'reload')(*(['tv'] if recheck == 'reload_self' else []))
+    assert r.states[PENDING] == 'on'
+    r.advance(900)
+    expected = [(900, 'light.turn_off')] + ([(900, 'media_player.turn_off')] if tv == 'on' else [])
+    assert [(c[0] - t0, c[1]) for c in r.device_offs()] == expected
+    # A spoken (TV-active) recovery warns at once, still 15 minutes before shutdown.
+    assert [c[0] - t0 for c in r.announcements() if c[0] >= t0] == ([0, 300, 600, 840] if tv == 'on' else [])
+
+
+RECHECKS = {'reload_other': lambda r: r.reload(),
+            'ambient_on': lambda r: r.set(**{LIGHTS[1]: 'on'}),
+            'led_change': lambda r: r.set(**{LED: '200'}),
+            'hold_release_edge': lambda r: (r.states.update({LIGHTS_AUTOMATION: 'off'}),
+                                            r.set(**{LIGHTS_AUTOMATION: 'on'}))}
+
+
+@pytest.mark.parametrize('recheck', RECHECKS)
+@pytest.mark.parametrize('tv', ['on', 'unavailable'])
+@pytest.mark.parametrize('at', [100, 1000, 1700])
+def test_recheck_never_restarts_a_running_countdown(recheck, tv, at):
+    r = Room(tv=tv)
+    r.empty()
+    r.advance(at)
+    RECHECKS[recheck](r)
+    r.advance(1800 - at)
+    expected = [(1800, 'light.turn_off')] + ([(1800, 'media_player.turn_off')] if tv == 'on' else [])
+    assert [(c[0], c[1]) for c in r.device_offs()] == expected
+    assert [c[0] for c in r.announcements()] == ([900, 1200, 1500, 1740] if tv == 'on' else [])
+
+
+@pytest.mark.parametrize('blocker', [{SENSORS[0]: 'on'}, {SENSORS[1]: 'unavailable'}, *HOLDS])
+@pytest.mark.parametrize('recheck', ['ha_start', 'reload_other', 'ambient_on'])
+def test_recheck_does_nothing_when_occupied_or_held(blocker, recheck):
+    r = Room(tv='unavailable')
+    r.set(**blocker)
+    r.empty() if SENSORS[0] not in blocker and SENSORS[1] not in blocker else r.set(
+        **{s: 'off' for s in SENSORS if s not in blocker})
+    r.advance(3600)
+    {'ha_start': r.ha_start, 'reload_other': r.reload,
+     'ambient_on': lambda: r.set(**{LIGHTS[1]: 'on'})}[recheck]()
+    r.advance(4000)
+    assert not r.device_offs() and not r.announcements()
+    assert r.states[PENDING] == 'off'
+
+
+@pytest.mark.parametrize('at', [0, 100, 450, 840, 899])
+@pytest.mark.parametrize('sensor', SENSORS)
+@pytest.mark.parametrize('value', ['on', 'unavailable'])
+def test_occupancy_cancels_a_recheck_countdown(at, sensor, value):
+    r = Room(tv='unavailable', lights='off')
+    r.empty()
+    r.advance(3600)
+    r.set(**{LIGHTS[0]: 'on'})
+    r.advance(at)
+    r.set(**{sensor: value})
+    assert r.states[PENDING] == 'off'
+    r.advance(4000)
+    assert not r.device_offs()
+
+
+def test_lights_automation_reload_blip_does_not_disturb_a_lights_only_countdown():
+    r = Room(tv='unavailable')
+    r.empty()
+    r.advance(1000)
+    r.set(**{LIGHTS_AUTOMATION: 'unavailable'})  # entity removed while it reloads
+    r.set(**{LIGHTS_AUTOMATION: 'on'})
+    r.reload('lights')
+    r.advance(800)
+    assert [(c[0], c[1]) for c in r.device_offs()] == [(1800, 'light.turn_off')]
+
+
+def test_lights_automation_has_no_separate_shutoff_path():
+    config = yaml.safe_load(LIGHT_PATH.read_text())
+    assert config['triggers'] == [] and config['actions'] == []
 
 
 def test_both_mirrors_and_incident_rollback_remain_consistent():

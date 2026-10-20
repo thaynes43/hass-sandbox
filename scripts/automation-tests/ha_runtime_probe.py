@@ -23,6 +23,8 @@ PENDING = 'input_boolean.basement_movie_room_tv_auto_off_enabled'
 SENSORS = ['binary_sensor.basement_movie_inovelli_presence_occupancy',
            'binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor']
 LED = 'number.basement_movie_inovelli_presence_defaultled1colorwhenon'
+LIGHTS = ['light.basement_movie_room_lights', 'light.basement_movie_room_ambient_lighting']
+LIGHTS_AUTOMATION = 'automation.light_inovelli_movie_room_motion_cleared_lights_off'
 
 
 def shorten_waits(node):
@@ -38,11 +40,13 @@ def shorten_waits(node):
             shorten_waits(value)
 
 
-async def probe(hass, configs, fail_warning=False, hold=None, occupied=False):
+async def probe(hass, configs, fail_warning=False, hold=None, occupied=False, tv='on',
+                trigger_id='room_empty'):
     calls = []
-    for entity, state in {TV: 'on', PENDING: 'off', SENSORS[0]: 'off', SENSORS[1]: 'off',
+    for entity, state in {TV: tv, PENDING: 'off', SENSORS[0]: 'off', SENSORS[1]: 'off',
                           LED: hold or '255', 'input_text.inovelli_manual_hold': '90',
-                          'input_text.inovelli_auto_hold': '130',
+                          'input_text.inovelli_auto_hold': '130', LIGHTS_AUTOMATION: 'on',
+                          LIGHTS[0]: 'on', LIGHTS[1]: 'off',
                           'input_select.basement_movie_room_tv_auto_off_delay': '00:20:00'}.items():
         hass.states.async_set(entity, state)
 
@@ -57,6 +61,9 @@ async def probe(hass, configs, fail_warning=False, hold=None, occupied=False):
                 hass.states.async_set(SENSORS[0], 'on')
         elif call.domain == 'media_player':
             hass.states.async_set(TV, 'off')
+        elif call.domain == 'light':
+            for light in LIGHTS:
+                hass.states.async_set(light, 'off')
 
     for domain, service in [('input_boolean', 'turn_on'), ('input_boolean', 'turn_off'),
                             ('assist_satellite', 'announce'), ('light', 'turn_off'),
@@ -66,16 +73,20 @@ async def probe(hass, configs, fail_warning=False, hold=None, occupied=False):
     shorten_waits(config)
     validated = await async_validate_config_item(hass, config['id'], config)
     script = Script(hass, validated['actions'], 'isolated movie room probe', 'automation')
-    await script.async_run({'trigger': {'id': 'room_empty'}})
+    await script.async_run({'trigger': {'id': trigger_id}})
     warnings = [c for c in calls if c[0] == 'assist_satellite']
     offs = [c[0] for c in calls if c[0] in ['light', 'media_player']]
     assert hass.states.get(PENDING).state == 'off', calls
-    if fail_warning or occupied:
+    if tv != 'on':
+        # Lights-only countdown: silent, lights off, never a TV command.
+        assert not warnings and offs == ['light'], calls
+    elif fail_warning or occupied:
         assert len(warnings) == 1 and not offs, calls
     else:
         assert len(warnings) == 4, calls
         assert offs == (['media_player'] if hold else ['light', 'media_player']), calls
-    print(f'Isolated HA Script OK: fail_warning={fail_warning}, hold={hold}, occupied={occupied}')
+    print(f'Isolated HA Script OK: fail_warning={fail_warning}, hold={hold}, occupied={occupied}, '
+          f'tv={tv}, trigger={trigger_id}')
 
 
 async def main():
@@ -93,6 +104,8 @@ async def main():
     await probe(hass, configs, hold='90')
     await probe(hass, configs, hold='130')
     await probe(hass, configs, occupied=True)
+    await probe(hass, configs, tv='unavailable')
+    await probe(hass, configs, tv='off', trigger_id='recheck')
 
 
 if __name__ == '__main__':
