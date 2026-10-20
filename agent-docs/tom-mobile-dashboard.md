@@ -24,8 +24,8 @@ Tom split the single view into tabs on 2026-09-29. Tab order, `path` and icon:
 
 A bubble-card pop-up only opens from cards in its own view, so each pop-up lives in the same tab
 as the cards that open it: Main has `#health-check-popup`, `#tom-primary-bedroom`,
-`#tom-climate-control`, `#tom-locks` and `#tom-garage-doors`; Outdoor has `#tom-pool-lights` and
-`#tom-pool-heat`; Basement has `#tom-basement-climate`, `#tom-movie-ambient`,
+`#tom-climate-control`, `#tom-locks` and `#tom-garage-doors`; Outdoor has `#tom-pool-lights`,
+`#tom-pool-heat`, `#tom-outdoor-calla`, `#tom-outdoor-lily` and `#tom-outdoor-patio-flood`; Basement has `#tom-basement-climate`, `#tom-movie-ambient`,
 `#tom-movie-receiver`, `#tom-server-room-ups`, `#tom-cigars` and `#tom-leak-detection`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
 view by path or index: `/tom-mobile` (Tom's default panel) opens Main. When a floor tab gets
 cards, replace its "No cards yet." markdown card.
@@ -49,7 +49,7 @@ Room cards off it.
 
 | Section (bubble separator) | Cards |
 |---|---|
-| Outdoors | "Outdoor Lights" bubble button: Calla / Lily / Floodlight / Motion / Patio Flood toggles + Flood Hold |
+| Outdoor Lights | 2-col grid of name cards: Calla → `#tom-outdoor-calla`, Lily → `#tom-outdoor-lily`, Patio Flood → `#tom-outdoor-patio-flood`, then one-tap Motion Light, Floodlight and Flood Hold — see *Outdoor Lights card* below |
 | Pool | "Pool" bubble button: Lights toggle, Color → `#tom-pool-lights`, Water temp + Set point chips → `#tom-pool-heat` |
 | Bike Chargers | 2-col grid: E-Bike / Mom Bike switch cards with dynamic charging icon + live W draw |
 
@@ -130,12 +130,15 @@ pickers after native Assist is opened again, or after the refresh button in an i
 ## Key entities
 
 ### Outdoors
-- Front yard: `light.front_yard_hue_calla_lights`, `light.front_yard_hue_lily_lights` (Hue groups).
+- Front yard: `light.front_yard_hue_calla_lights`, `light.front_yard_hue_lily_lights` (Hue groups:
+  brightness, colour temperature 2000–6535 K and xy colour).
+- Patio: `light.patio_hue_discover_flood_light` (Hue Discover flood, Z2M: brightness, 2000–6666 K, xy),
+  also switched by the patio sunset/midnight automation.
 - Backyard floodlight ("spotlight" elsewhere): `light.downstairs_kitchen_back_yard_spotlight`
-  (Inovelli Blue dimmer).
-- **Motion**: `switch.back_yard_backyard_motion_light_relay` (Shelly 1 Mini Gen4) — powers the
-  backyard motion-sensing fixture. Plain toggle sub-button (`.bubble-sub-button-5`, accent tint
-  when on). Scheduled by
+  (Inovelli Blue). HA exposes brightness, but **the fixture does not dim** (Tom, 2026-10-20), so
+  the dashboard only toggles it and never opens its more-info dialog, which has a brightness slider.
+- **Motion Light**: `switch.back_yard_backyard_motion_light_relay` (Shelly 1 Mini Gen4) — powers the
+  backyard motion-sensing fixture. One-tap toggle card. Scheduled by
   `automation.switch_back_yard_midnight_and_sunrise_manage_motion_light` (on at midnight, off at
   sunrise; repo copy under `home-assistant/automations/back-yard/`).
 - **Flood Hold**: there is NO hold input_boolean. Manual hold = the three backyard occupancy
@@ -156,6 +159,41 @@ pickers after native Assist is opened again, or after the refresh button in an i
   script** — toggling the automations directly desyncs the switch LED indicator. Hold state is read
   from `automation.switch_back_yard_slider_opens_turn_on_spotlight` (`off` = hold active; card shows
   amber + `mdi:lock`).
+
+### Outdoor Lights card (2026-10-20, #276)
+Tom, with a phone screenshot of the old six-sub-button card: "The outdoor light card is just toggles
+and it's too small. I need to be able to read the buttons and they should open the full controls for
+the light if they are more than toggles". It is now a `grid` card (`columns: 2`, `square: false`)
+of six Bubble name cards under the "Outdoor Lights" separator (icon `mdi:outdoor-lamp`):
+
+| Row | Left | Right |
+|---|---|---|
+| 1 | Calla → `#tom-outdoor-calla` | Lily → `#tom-outdoor-lily` |
+| 2 | Patio Flood → `#tom-outdoor-patio-flood` | Motion Light (toggle) |
+| 3 | Floodlight (toggle) | Flood Hold (hold script) |
+
+- **Calla, Lily, Patio Flood** follow Tom's 2026-09-28 convention and the Basement light cards:
+  the body opens the pop-up (`button_action` navigate), the `mdi:power` icon toggles the light and its
+  container is tinted with the accent colour while on. The state line is CSS (`.bubble-state`
+  font-size 0 + `::after`): the brightness %, `Off`, or `Unavailable`.
+- **Motion Light, Floodlight**: the card body and the icon both toggle (`tap_action` and
+  `button_action` `toggle`), with a descriptive icon instead of the power icon, so a power icon
+  always means "this card also has a pop-up". State line `On` / `Off` / `Unavailable`.
+  Floodlight also has `hold_action`/`double_tap_action` `none` on both the icon and the body, so
+  nothing on the card can open more-info. (Bubble's name-card defaults are already `none`; the
+  explicit keys keep it that way if a Bubble update changes the defaults.)
+- **Flood Hold**: icon and body both call the hold script with the payload above. The styles set
+  `mdi:lock` + `rgba(255, 179, 0, 0.35)` and state `On` while the slider-opens automation is `off`,
+  otherwise `mdi:lock-open-variant`, idle grey and `Off`.
+- Each card is 183 px wide at 390 px with a 107 px label box. Measured 2026-10-20 at 390×844 with
+  Playwright: the longest label, "Motion Light", is 78 px, and the longest state, "Unavailable", is
+  63 px. No label scrolls. A longer name (more than about 15 characters in bold 14 px) would start to
+  scroll, so screenshot at 390 px before renaming one.
+- **Pop-ups** (the last cards of the Outdoor tab, after `#tom-pool-heat`): deep copies of the
+  Basement `#tom-concessions-lights` pop-up, with a markdown title ("Calla Lights", "Lily Lights",
+  "Patio Flood") and one slider card (`button_type: slider`, power icon toggles = the on/off
+  control, brightness % state) with full-width `white_temp` and `hue` sub-button sliders, each in its
+  own group row (`rows: 2.438`). The Floodlight has no pop-up.
 
 ### Pool (Pentair IntelliCenter, "Haynes Res.")
 - Lights: `light.haynes_res_pool_lights` — on/off only; colors/shows are the light's `effect` list:
@@ -283,7 +321,7 @@ Every button reuses a script the voice agents or the wall switches already use, 
 - Groups mode: the climate card's `sub_button.bottom` holds entries like `{name, group: [...],
   buttons_layout: inline}`, and `bottom_layout: rows` puts each group on its own row. The `.bubble-sub-button-N`
   numbering runs across all the groups, main buttons first.
-- Four sub-buttons per bottom row is the most that fit at iPhone width; five or more get truncated (Outdoor Lights has six since 2026-10-20: button 6 = Patio Flood, `light.patio_hue_discover_flood_light`, also switched by the patio sunset/midnight automation).
+- Four sub-buttons per bottom row is the most that fit at iPhone width; five or more get truncated (the old Outdoor Lights card had six and its labels scrolled as tickers, so it became a 2-column grid of cards on 2026-10-20, see *Outdoor Lights card*).
 
 ### Server Room (added 2026-09-29)
 - **Lights** (Tom: "Sometimes I am behind the server rack and the mmwave sensors can't see me"): a name card on
