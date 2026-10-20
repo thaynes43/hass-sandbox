@@ -1,9 +1,10 @@
 alias: "[Switch] : [Patio] : [Sunset and Midnight] : [Manage Patio Lighting]"
 description: >
-  Turn Patio Lighting on at sunset and off at midnight. Extend by adding
-  entity_ids to BOTH the sunset_on and midnight_off branches. Uses
-  homeassistant.turn_on/off so switch and light domain entities can be mixed in
-  the same list.
+  Turn Patio Lighting on at sunset and off at midnight. Switch/relay entities go
+  in the sunset_on homeassistant.turn_on list; lights that need a level get their
+  own light.turn_on step (patio Hue Discover flood: 33 %, 2500 K, set by Tom
+  2026-10-20). Every entity also goes in the midnight_off homeassistant.turn_off
+  list, which mixes switch and light domains.
 mode: single
 trigger:
   - platform: sun
@@ -23,8 +24,13 @@ action:
             target:
               entity_id:
                 - switch.back_yard_retaining_wall_lights_relay
-                - light.patio_hue_discover_flood_light
             data: {}
+          - action: light.turn_on
+            target:
+              entity_id: light.patio_hue_discover_flood_light
+            data:
+              brightness_pct: 33
+              color_temp_kelvin: 2500
       - conditions:
           - condition: trigger
             id: midnight_off

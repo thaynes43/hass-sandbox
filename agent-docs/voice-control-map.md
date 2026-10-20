@@ -198,7 +198,7 @@ Schedules (all unconditional, manual state simply lasts until the next edge):
 | Lights | On | Off |
 |---|---|---|
 | Front yard Lily (100 %) + Calla (25 %), porch group (25 %), front door light | sunset | 00:00 |
-| Patio retaining wall relay (`switch.back_yard_retaining_wall_lights_relay`) + patio Hue Discover flood (`light.patio_hue_discover_flood_light`, since 2026-10-20; not exposed to voice) | sunset | 00:00 |
+| Patio retaining wall relay (`switch.back_yard_retaining_wall_lights_relay`) + patio Hue Discover flood (`light.patio_hue_discover_flood_light`, since 2026-10-20, on at 33 % / 2500 K; not exposed to voice) | sunset | 00:00 |
 | Shed flowerbox relay (`switch.shed_exterior_lights_shelly_relay`) | sunset | 00:00 |
 | Driveway (`light.garage_driveway_inovelli_dimmer`), back yard (`light.garage_back_yard_inovelli_dimmer`) | sunset | 01:00 |
 | Back-yard motion-light relay | 00:00 | sunrise |
