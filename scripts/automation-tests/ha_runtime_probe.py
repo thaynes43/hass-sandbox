@@ -13,7 +13,7 @@ import sys
 
 from homeassistant import loader
 from homeassistant.components.automation.config import async_validate_config_item
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Context, HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import trigger
 from homeassistant.helpers.script import Script
@@ -25,6 +25,7 @@ SENSORS = ['binary_sensor.basement_movie_inovelli_presence_occupancy',
 LED = 'number.basement_movie_inovelli_presence_defaultled1colorwhenon'
 LIGHTS = ['light.basement_movie_room_lights', 'light.basement_movie_room_ambient_lighting']
 LIGHTS_AUTOMATION = 'automation.light_inovelli_movie_room_motion_cleared_lights_off'
+CANCELLED = 'input_boolean.basement_movie_room_tv_auto_off_cancelled'
 
 
 def shorten_waits(node):
@@ -46,6 +47,7 @@ async def probe(hass, configs, fail_warning=False, hold=None, occupied=False, tv
     for entity, state in {TV: tv, PENDING: 'off', SENSORS[0]: 'off', SENSORS[1]: 'off',
                           LED: hold or '255', 'input_text.inovelli_manual_hold': '90',
                           'input_text.inovelli_auto_hold': '130', LIGHTS_AUTOMATION: lights_automation,
+                          CANCELLED: 'off',
                           LIGHTS[0]: 'on', LIGHTS[1]: 'off',
                           'input_select.basement_movie_room_tv_auto_off_delay': '00:20:00'}.items():
         hass.states.async_set(entity, state)
@@ -53,7 +55,8 @@ async def probe(hass, configs, fail_warning=False, hold=None, occupied=False, tv
     async def fake_service(call):
         calls.append((call.domain, call.service, call.data))
         if call.domain == 'input_boolean':
-            hass.states.async_set(PENDING, 'on' if call.service == 'turn_on' else 'off')
+            for entity in call.data['entity_id']:
+                hass.states.async_set(entity, 'on' if call.service == 'turn_on' else 'off')
         elif call.domain == 'assist_satellite':
             if fail_warning:
                 raise HomeAssistantError('Intentional isolated fake announcement failure')
@@ -92,6 +95,20 @@ async def probe(hass, configs, fail_warning=False, hold=None, occupied=False, tv
           f'tv={tv}, trigger={trigger_id}, lights_automation={lights_automation}')
 
 
+async def probe_manual_cancel(hass, configs, user_id):
+    """A pending toggle turned off by a person (context.user_id) sticks; the automation's own does not."""
+    hass.states.async_set(CANCELLED, 'off')
+    hass.states.async_set(PENDING, 'off')
+    config = copy.deepcopy(configs[0])
+    validated = await async_validate_config_item(hass, config['id'], config)
+    script = Script(hass, validated['actions'], 'isolated movie room cancel probe', 'automation')
+    to_state = State(PENDING, 'off', context=Context(user_id=user_id))
+    await script.async_run({'trigger': {'id': 'pending_cancelled', 'to_state': to_state}})
+    expected = 'on' if user_id else 'off'
+    assert hass.states.get(CANCELLED).state == expected, hass.states.get(CANCELLED)
+    print(f'Isolated HA Script OK: pending_cancelled user_id={user_id!r} -> cancelled={expected}')
+
+
 async def main():
     # This is a new in-process HA object, with no connection to the running instance.
     hass = HomeAssistant('/tmp/offline-movie-room-schema-only')
@@ -110,6 +127,8 @@ async def main():
     await probe(hass, configs, tv='unavailable')
     await probe(hass, configs, tv='off', trigger_id='recheck')
     await probe(hass, configs, tv='unavailable', trigger_id='recheck', lights_automation='off')
+    await probe_manual_cancel(hass, configs, user_id='0123456789abcdef')
+    await probe_manual_cancel(hass, configs, user_id=None)
 
 
 if __name__ == '__main__':

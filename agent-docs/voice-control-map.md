@@ -124,7 +124,9 @@ later; it never restarts a running countdown. Either sensor reporting occupancy 
 hold during a lights-only countdown, or cancelling the pending toggle aborts the run. A hold is LED1 at
 a hold colour or `automation.light_inovelli_movie_room_motion_cleared_lights_off` turned off; that
 automation no longer turns anything off itself. Holds protect lights without changing TV auto-off
-policy, and the TV is only sent `turn_off` when it is confirmed active. No HA automation turns the TV/AVR on, but the AVR (Sony STR-AZ5000ES,
+policy, and the TV is only sent `turn_off` when it is confirmed active. A manual cancel sticks (ruling Q6): turning the
+pending toggle off by hand sets `input_boolean.basement_movie_room_tv_auto_off_cancelled` (helper, not
+exposed to voice), and no countdown starts again until a sensor reports occupancy or the TV turns off. No HA automation turns the TV/AVR on, but the AVR (Sony STR-AZ5000ES,
 "Works with Sonos") **wakes itself** when the Sonos Port `media_player.movie_room` plays: power on
 after ~2 s, volume tracks the Port, input switches to `Sonos` (AVR recorder history, 2026-09-19
 17:08) — so music sent to this room is audible even with everything "off". Four AVR registrations:
