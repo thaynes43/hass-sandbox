@@ -49,7 +49,7 @@ Room cards off it.
 
 | Section (bubble separator) | Cards |
 |---|---|
-| Outdoors | "Outdoor Lights" bubble button: Calla / Lily / Floodlight / Motion toggles + Flood Hold |
+| Outdoors | "Outdoor Lights" bubble button: Calla / Lily / Floodlight / Motion / Patio Flood toggles + Flood Hold |
 | Pool | "Pool" bubble button: Lights toggle, Color → `#tom-pool-lights`, Water temp + Set point chips → `#tom-pool-heat` |
 | Bike Chargers | 2-col grid: E-Bike / Mom Bike switch cards with dynamic charging icon + live W draw |
 
@@ -283,7 +283,7 @@ Every button reuses a script the voice agents or the wall switches already use, 
 - Groups mode: the climate card's `sub_button.bottom` holds entries like `{name, group: [...],
   buttons_layout: inline}`, and `bottom_layout: rows` puts each group on its own row. The `.bubble-sub-button-N`
   numbering runs across all the groups, main buttons first.
-- Four sub-buttons per bottom row is the most that fit at iPhone width; five get truncated (Outdoor Lights).
+- Four sub-buttons per bottom row is the most that fit at iPhone width; five or more get truncated (Outdoor Lights has six since 2026-10-20: button 6 = Patio Flood, `light.patio_hue_discover_flood_light`, also switched by the patio sunset/midnight automation).
 
 ### Server Room (added 2026-09-29)
 - **Lights** (Tom: "Sometimes I am behind the server rack and the mmwave sensors can't see me"): a name card on
