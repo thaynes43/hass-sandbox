@@ -25,8 +25,8 @@ Tom split the single view into tabs on 2026-09-29. Tab order, `path` and icon:
 A bubble-card pop-up only opens from cards in its own view, so each pop-up lives in the same tab
 as the cards that open it: Main has `#health-check-popup`, `#tom-primary-bedroom`,
 `#tom-climate-control`, `#tom-locks` and `#tom-garage-doors`; Outdoor has `#tom-pool-lights`,
-`#tom-pool-heat`, `#tom-outdoor-calla`, `#tom-outdoor-lily`, `#tom-outdoor-patio-flood`, `#tom-outdoor-porch`,
-`#tom-outdoor-lamp-post`, `#tom-outdoor-pavilion-light` and `#tom-outdoor-pavilion-fan`; Basement has `#tom-basement-climate`, `#tom-movie-ambient`,
+`#tom-pool-heat`, `#tom-outdoor-patio-flood`, `#tom-outdoor-porch`, `#tom-outdoor-front-yard`,
+`#tom-outdoor-pavilion` and `#tom-outdoor-floodlight`; Basement has `#tom-basement-climate`, `#tom-movie-ambient`,
 `#tom-movie-receiver`, `#tom-server-room-ups`, `#tom-cigars` and `#tom-leak-detection`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
 view by path or index: `/tom-mobile` (Tom's default panel) opens Main. When a floor tab gets
 cards, replace its "No cards yet." markdown card.
@@ -50,7 +50,7 @@ Room cards off it.
 
 | Section (bubble separator) | Cards |
 |---|---|
-| Lights | "Front" and "Back" Bubble cards, every exterior light as a sub-button (3 per row at most); a chip marked › opens that light's pop-up, the rest toggle — see *Front / Back light cards* below |
+| Lights | "Front" (Porch › · Front Yard ›, Driveway · Shed) and "Back" (Patio › · Pavilion › · Floodlight ›, Back Door · Retaining Wall) Bubble cards; a chip marked › opens a pop-up, the rest toggle — see *Front / Back light cards* below |
 | Pool | "Pool" bubble button: Lights toggle, Color → `#tom-pool-lights`, Water temp + Set point chips → `#tom-pool-heat` |
 | Bike Chargers | 2-col grid: E-Bike / Mom Bike switch cards with dynamic charging icon + live W draw |
 
@@ -150,7 +150,7 @@ pickers after native Assist is opened again, or after the refresh button in an i
   (Inovelli Blue). HA exposes brightness, but **the fixture does not dim** (Tom, 2026-10-20), so
   the dashboard only toggles it and never opens its more-info dialog, which has a brightness slider.
 - **Motion Light**: `switch.back_yard_backyard_motion_light_relay` (Shelly 1 Mini Gen4) — powers the
-  backyard motion-sensing fixture. A toggle. Scheduled by
+  backyard motion-sensing fixture. A toggle in `#tom-outdoor-floodlight`. Scheduled by
   `automation.switch_back_yard_midnight_and_sunrise_manage_motion_light` (on at midnight, off at
   sunrise; repo copy under `home-assistant/automations/back-yard/`).
 - **Flood Hold**: there is NO hold input_boolean. Manual hold = the three backyard occupancy
@@ -172,50 +172,74 @@ pickers after native Assist is opened again, or after the refresh button in an i
   from `automation.switch_back_yard_slider_opens_turn_on_spotlight` (`off` = hold active; card shows
   amber + `mdi:lock`).
 
-### Front / Back light cards (2026-10-20, #280)
+### Front / Back light cards (2026-10-20, #280, condensed in #283)
 Tom rejected the #279 grid of six cards: "I expected a bubble card with sub buttons. Let's split that
-into different functions." He then ruled on two groups, Front and Back. Every exterior light is now a
-sub-button on one of two Bubble name cards, under the "Lights" separator (icon `mdi:outdoor-lamp`):
+into different functions." He ruled on two groups, Front and Back (#280). After seeing that version on
+his phone he asked to condense it (#283): "Floodlight can be a > button that opens a popup with both the
+toggle and the hold button for the main floodlight and then the toggle for the motion light … The
+pavilion fan controls can be on the same popup as the fan light … [porch recessed lights and front door
+fixtures] can be under a Porch popup. Then a 'front yard' popup can have calla, lily, and lamp post
+controls." Both cards sit under the "Lights" separator (icon `mdi:outdoor-lamp`):
 
-| Card | Row 1 | Row 2 | Row 3 |
-|---|---|---|---|
-| **Front** (`mdi:home-outline`) | Porch › · Front Door · Lamp Post › | Lily › · Calla › | Driveway · Shed |
-| **Back** (`mdi:pine-tree`) | Patio › · Pavilion › · Fan › | Floodlight · Flood Hold · Motion | Back Door · Retaining Wall |
+| Card | Row 1 | Row 2 |
+|---|---|---|
+| **Front** (`mdi:home-outline`) | Porch › · Front Yard › | Driveway · Shed |
+| **Back** (`mdi:pine-tree`) | Patio › · Pavilion › · Floodlight › | Back Door · Retaining Wall |
 
 - **Groups mode**: `sub_button.bottom` has one `{name, group: [...], buttons_layout: inline}` entry per row,
-  with `bottom_layout: rows`, `card_layout: large-sub-buttons-grid` and `rows: 3.157` (1 + 0.719 per row).
-  The group names (House, Gardens, …) are editor labels only and never render. **At most 3 sub-buttons per
-  row**: with 6 in one row the labels scrolled as tickers.
+  with `bottom_layout: rows`, `card_layout: large-sub-buttons-grid` and `rows: 2.438` (1 + 0.719 per row).
+  The group names are editor labels only and never render. **At most 3 sub-buttons per row**: with 6 in
+  one row the labels scrolled as tickers.
 - **› = tap opens a pop-up** with the full controls. The › is CSS (`::after` on the chip's
-  `.bubble-sub-button-name-container`), so it is not part of the name. Every other chip toggles its entity
-  on tap. Floodlight, Driveway and Back Door also set `hold_action`/`double_tap_action` `none`, so a
-  brightness slider can never be opened for them. Neither the card body nor the card icon does anything.
-- **Tint**: the `styles` JS colours each `.bubble-sub-button-N` with the accent
-  (`rgba(var(--rgb-accent-color), 0.45)`) while its entity is `on`, otherwise `rgba(0,0,0,0.22)`, from one
-  `[N, entity]` list. The card icon gets the accent when anything on that card is on. N is 1-based across
-  all rows (Back: 1 Patio … 5 Flood Hold … 8 Retaining Wall), and `subButtonIcon[i]` is 0-based.
-- **Flood Hold** (Back, sub-button 5) calls the hold script with the payload above, never the
-  automations. While `automation.switch_back_yard_slider_opens_turn_on_spotlight` is `off`,
-  `subButtonIcon[4]` is `mdi:lock` and the chip is amber `rgba(255, 179, 0, 0.35)`. Otherwise it shows
-  `mdi:lock-open-variant` and the idle colour.
+  `.bubble-sub-button-name-container`), so it is not part of the name. Driveway, Shed, Back Door and
+  Retaining Wall toggle on tap. Driveway and Back Door also set `hold_action`/`double_tap_action` `none`,
+  so nothing can open a brightness slider for them. The card body and the card icon do nothing.
+- **Tint**: the `styles` JS holds one `[N, [entities]]` list per card and colours `.bubble-sub-button-N`
+  with the accent (`rgba(var(--rgb-accent-color), 0.45)`) while **any** of its entities is `on`, otherwise
+  `rgba(0,0,0,0.22)`. The card icon gets the accent when anything on the card is on. Members:
+
+  | Chip | Tinted while any of these is on |
+  |---|---|
+  | Porch | `light.outdoor_front_porch_lights`, `light.downstairs_front_door_inovelli_on_off` |
+  | Front Yard | Calla, Lily, `light.front_yard_lamp_post_hue_edison` |
+  | Pavilion | `light.pavilion_fan_light`, `fan.pavilion_fan_fan` |
+  | Floodlight | `light.downstairs_kitchen_back_yard_spotlight`, `switch.back_yard_backyard_motion_light_relay` |
+
+  Bubble re-renders a card when any entity its styles read changes, because it tracks `hass.states`
+  reads through a Proxy (`_renderReads`). So a member that is not a sub-button's own `entity` still
+  updates the tint.
+- **Floodlight chip and the hold**: while `automation.switch_back_yard_slider_opens_turn_on_spotlight` is
+  `off` (Flood Hold active), the chip shows `mdi:lock` (`subButtonIcon[2]`) in amber
+  `rgba(255, 179, 0, 0.35)`, whatever the lights are doing. Otherwise it shows `mdi:spotlight-beam` with the
+  on/off tint. The held look was checked on the preview dashboard with a stand-in entity
+  (`cond-back-held-preview.png`), because the hold was not active at the time.
 - **Label widths**, measured 2026-10-20 at 390×844 with Playwright: a chip is 114 px wide with 3 in a row
-  (98 px inside its padding) and 175 px with 2 in a row. The tightest is "Lamp Post ›" with 11.6 px to
-  spare, then "Flood Hold" (20 px), "Front Door" (20.6 px) and "Floodlight" (26 px). No label scrolls.
-  A longer label in a 3-chip row will scroll, so screenshot at 390 px before renaming or adding a chip.
-- **Pop-ups** are the last cards of the Outdoor tab, after `#tom-pool-heat`. Each has a markdown title,
-  and its power icon is the on/off:
-  - `#tom-outdoor-calla`, `#tom-outdoor-lily`, `#tom-outdoor-patio-flood` (from #279), `#tom-outdoor-porch`
-    and `#tom-outdoor-lamp-post`: copies of the Basement `#tom-concessions-lights` pop-up. Each holds one
-    slider card (`button_type: slider`, brightness % state) with full-width `white_temp` and `hue`
-    sub-button sliders, each in its own group row (`rows: 2.438`).
-  - `#tom-outdoor-pavilion-light`: a brightness slider card only, the same as the Blue Room's Fan Light.
-  - `#tom-outdoor-pavilion-fan`: the Second floor fan card pattern (`#tom-blue-room`). The power icon
-    toggles. Row 1 has speeds 1–6 (`fan.turn_on` with `percentage` 16/33/50/66/83/100; single digits, so
-    6 fit in one row). Row 2 is **Steady** / **Breeze** (`fan.turn_on` with `preset_mode` `normal` /
-    `breeze`). Row 3 is **Summer** / **Winter** (`fan.set_direction`). Numbering: 1–6 speed, 7 Steady,
-    8 Breeze, 9 Summer, 10 Winter. Steady and Breeze are tinted only while the fan is on. The state line
-    reads "Speed N of 6", plus " · Breeze" in breeze mode.
-  - The Floodlight has no pop-up.
+  (98 px inside its padding) and 175 px with 2 in a row. The tightest is "Floodlight ›" with 17 px to spare,
+  then "Pavilion ›" (27 px). No label scrolls. A longer label in a 3-chip row will scroll, so screenshot at
+  390 px before renaming or adding a chip.
+- **Pop-ups** are the last cards of the Outdoor tab, after `#tom-pool-heat`. Each has a markdown title, and
+  every light or fan in one has its own on/off:
+  - `#tom-outdoor-porch` ("Porch"): **Recessed Lights** (`light.outdoor_front_porch_lights`, a slider card:
+    the power icon toggles, with brightness and full-width `white_temp` + `hue` sub-button rows,
+    `rows: 2.438`), then **Front Door Fixtures** (`light.downstairs_front_door_inovelli_on_off`, a name card,
+    `mdi:wall-sconce`: the body and icon both toggle, and hold/double tap are `none`, so it is on/off only).
+  - `#tom-outdoor-front-yard` ("Front Yard"): three slider cards like Recessed Lights, for Calla, Lily and
+    Lamp Post.
+  - `#tom-outdoor-patio-flood` ("Patio Flood"): unchanged since #279, the same slider card for the patio
+    Hue flood.
+  - `#tom-outdoor-pavilion` ("Pavilion"): **Fan Light** (a brightness slider, the same as the Blue Room's Fan
+    Light), then **Fan** in the Second floor fan card pattern (`#tom-blue-room`). The fan's power icon toggles.
+    Row 1 has speeds 1–6 (`fan.turn_on` with `percentage` 16/33/50/66/83/100; single digits, so 6 fit in one
+    row). Row 2 is **Steady** / **Breeze** (`fan.turn_on` with `preset_mode` `normal` / `breeze`). Row 3 is
+    **Summer** / **Winter** (`fan.set_direction`). Numbering: 1–6 speed, 7 Steady, 8 Breeze, 9 Summer,
+    10 Winter. Steady and Breeze are tinted only while the fan is on. The state line reads "Speed N of 6",
+    plus " · Breeze" in breeze mode.
+  - `#tom-outdoor-floodlight` ("Floodlight"): the three #279 name cards, unchanged. **Floodlight**
+    (`mdi:spotlight-beam`; the body and icon toggle; hold/double tap `none` on both, so no dimming dialog),
+    **Flood Hold** (the body and icon call the hold script with the payload above; `mdi:lock`, amber and
+    `On` while held, otherwise `mdi:lock-open-variant`, idle and `Off`) and **Motion Light** (toggle).
+  - Removed in #283 because nothing launches them any more: `#tom-outdoor-calla`, `#tom-outdoor-lily`,
+    `#tom-outdoor-lamp-post`, `#tom-outdoor-pavilion-light` and `#tom-outdoor-pavilion-fan`.
 
 ### Pool (Pentair IntelliCenter, "Haynes Res.")
 - Lights: `light.haynes_res_pool_lights` — on/off only; colors/shows are the light's `effect` list:
