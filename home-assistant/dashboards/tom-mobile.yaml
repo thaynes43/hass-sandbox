@@ -1178,11 +1178,11 @@ views:
         tap_action:
           action: none
       card_layout: large-sub-buttons-grid
-      rows: 3.157
+      rows: 2.438
       sub_button:
         main: []
         bottom:
-        - name: House
+        - name: Porch and yard
           buttons_layout: inline
           group:
           - entity: light.outdoor_front_porch_lights
@@ -1195,30 +1195,8 @@ views:
             tap_action:
               action: navigate
               navigation_path: '#tom-outdoor-porch'
-          - entity: light.downstairs_front_door_inovelli_on_off
-            name: Front Door
-            icon: mdi:door
-            show_name: true
-            show_icon: true
-            show_state: false
-            state_background: false
-            tap_action:
-              action: toggle
-          - entity: light.front_yard_lamp_post_hue_edison
-            name: Lamp Post
-            icon: mdi:outdoor-lamp
-            show_name: true
-            show_icon: true
-            show_state: false
-            state_background: false
-            tap_action:
-              action: navigate
-              navigation_path: '#tom-outdoor-lamp-post'
-        - name: Gardens
-          buttons_layout: inline
-          group:
-          - entity: light.front_yard_hue_lily_lights
-            name: Lily
+          - entity: light.front_yard_hue_calla_lights
+            name: Front Yard
             icon: mdi:flower
             show_name: true
             show_icon: true
@@ -1226,17 +1204,7 @@ views:
             state_background: false
             tap_action:
               action: navigate
-              navigation_path: '#tom-outdoor-lily'
-          - entity: light.front_yard_hue_calla_lights
-            name: Calla
-            icon: mdi:flower-tulip
-            show_name: true
-            show_icon: true
-            show_state: false
-            state_background: false
-            tap_action:
-              action: navigate
-              navigation_path: '#tom-outdoor-calla'
+              navigation_path: '#tom-outdoor-front-yard'
         - name: Driveway and shed
           buttons_layout: inline
           group:
@@ -1263,20 +1231,18 @@ views:
             tap_action:
               action: toggle
         bottom_layout: rows
-      styles: ".bubble-sub-button-1 .bubble-sub-button-name-container::after, .bubble-sub-button-3 .bubble-sub-button-name-container::after,\
-        \ .bubble-sub-button-4 .bubble-sub-button-name-container::after, .bubble-sub-button-5 .bubble-sub-button-name-container::after\
+      styles: ".bubble-sub-button-1 .bubble-sub-button-name-container::after, .bubble-sub-button-2 .bubble-sub-button-name-container::after\
         \ {\n  content: \"›\";\n  margin-left: 5px;\n  opacity: 0.7;\n}\n.bubble-icon-container,\n.bubble-sub-button-1,\n\
-        .bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6,\n\
-        .bubble-sub-button-7 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
-        \ = (e) => hass.states[e]?.state === 'on';\n  const acc = 'rgba(var(--rgb-accent-color), 0.45)';\n\
-        \  const idle = 'rgba(0,0,0,0.22)';\n  const chips = [[1, \"light.outdoor_front_porch_lights\"\
-        ], [2, \"light.downstairs_front_door_inovelli_on_off\"], [3, \"light.front_yard_lamp_post_hue_edison\"\
-        ], [4, \"light.front_yard_hue_lily_lights\"], [5, \"light.front_yard_hue_calla_lights\"], [6,\
-        \ \"light.garage_driveway_inovelli_dimmer\"], [7, \"switch.shed_exterior_lights_shelly_relay\"\
-        ]];\n  let css = '.bubble-icon-container { background-color: '\n    + (chips.some((c) => on(c[1]))\
-        \ ? acc : idle) + ' !important; }\\n';\n  for (const c of chips) {\n    css += '.bubble-sub-button-'\
-        \ + c[0] + ' { background-color: '\n      + (on(c[1]) ? acc : idle) + ' !important; }\\n';\n \
-        \ }\n  return css;\n})()}\n"
+        .bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4 {\n  transition: background-color\
+        \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const acc\
+        \ = 'rgba(var(--rgb-accent-color), 0.45)';\n  const idle = 'rgba(0,0,0,0.22)';\n  const chips\
+        \ = [[1, [\"light.outdoor_front_porch_lights\", \"light.downstairs_front_door_inovelli_on_off\"\
+        ]], [2, [\"light.front_yard_hue_calla_lights\", \"light.front_yard_hue_lily_lights\", \"light.front_yard_lamp_post_hue_edison\"\
+        ]], [3, [\"light.garage_driveway_inovelli_dimmer\"]], [4, [\"switch.shed_exterior_lights_shelly_relay\"\
+        ]]];\n  let css = '.bubble-icon-container { background-color: '\n    + (chips.some((c) => c[1].some(on))\
+        \ ? acc : idle) + ' !important; }\\n';\n  for (const c of chips) {\n    const bg = c[1].some(on)\
+        \ ? acc : idle;\n    css += '.bubble-sub-button-' + c[0] + ' { background-color: ' + bg + ' !important;\
+        \ }\\n';\n  }\n  return css;\n})()}\n"
     - type: custom:bubble-card
       card_type: button
       button_type: name
@@ -1289,11 +1255,11 @@ views:
         tap_action:
           action: none
       card_layout: large-sub-buttons-grid
-      rows: 3.157
+      rows: 2.438
       sub_button:
         main: []
         bottom:
-        - name: Patio
+        - name: Pop-ups
           buttons_layout: inline
           group:
           - entity: light.patio_hue_discover_flood_light
@@ -1315,20 +1281,7 @@ views:
             state_background: false
             tap_action:
               action: navigate
-              navigation_path: '#tom-outdoor-pavilion-light'
-          - entity: fan.pavilion_fan_fan
-            name: Fan
-            icon: mdi:ceiling-fan
-            show_name: true
-            show_icon: true
-            show_state: false
-            state_background: false
-            tap_action:
-              action: navigate
-              navigation_path: '#tom-outdoor-pavilion-fan'
-        - name: Floodlight
-          buttons_layout: inline
-          group:
+              navigation_path: '#tom-outdoor-pavilion'
           - entity: light.downstairs_kitchen_back_yard_spotlight
             name: Floodlight
             icon: mdi:spotlight-beam
@@ -1337,44 +1290,9 @@ views:
             show_state: false
             state_background: false
             tap_action:
-              action: toggle
-            hold_action:
-              action: none
-            double_tap_action:
-              action: none
-          - entity: automation.switch_back_yard_slider_opens_turn_on_spotlight
-            name: Flood Hold
-            icon: mdi:lock-open-variant
-            show_name: true
-            show_icon: true
-            show_state: false
-            state_background: false
-            tap_action:
-              action: perform-action
-              perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
-              target: {}
-              data:
-                switch_name: downstairs_kitchen_back_yard_spotlight
-                hold_color: input_text.inovelli_manual_hold
-                prev_led_color_helper: input_number.outdoor_light_inovelli_led_color
-                automation_entity_ids:
-                - automation.switch_back_yard_slider_opens_turn_on_spotlight
-                - automation.switch_back_yard_camera_detects_motion_turn_on_lights
-                - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
-            hold_action:
-              action: none
-            double_tap_action:
-              action: none
-          - entity: switch.back_yard_backyard_motion_light_relay
-            name: Motion
-            icon: mdi:motion-sensor
-            show_name: true
-            show_icon: true
-            show_state: false
-            state_background: false
-            tap_action:
-              action: toggle
-        - name: Yard
+              action: navigate
+              navigation_path: '#tom-outdoor-floodlight'
+        - name: Toggles
           buttons_layout: inline
           group:
           - entity: light.garage_back_yard_inovelli_dimmer
@@ -1403,19 +1321,18 @@ views:
       styles: ".bubble-sub-button-1 .bubble-sub-button-name-container::after, .bubble-sub-button-2 .bubble-sub-button-name-container::after,\
         \ .bubble-sub-button-3 .bubble-sub-button-name-container::after {\n  content: \"›\";\n  margin-left:\
         \ 5px;\n  opacity: 0.7;\n}\n.bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n\
-        .bubble-sub-button-3,\n.bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n\
-        .bubble-sub-button-8 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
-        \ = (e) => hass.states[e]?.state === 'on';\n  const acc = 'rgba(var(--rgb-accent-color), 0.45)';\n\
-        \  const idle = 'rgba(0,0,0,0.22)';\n  const chips = [[1, \"light.patio_hue_discover_flood_light\"\
-        ], [2, \"light.pavilion_fan_light\"], [3, \"fan.pavilion_fan_fan\"], [4, \"light.downstairs_kitchen_back_yard_spotlight\"\
-        ], [6, \"switch.back_yard_backyard_motion_light_relay\"], [7, \"light.garage_back_yard_inovelli_dimmer\"\
-        ], [8, \"switch.back_yard_retaining_wall_lights_relay\"]];\n  let css = '.bubble-icon-container\
-        \ { background-color: '\n    + (chips.some((c) => on(c[1])) ? acc : idle) + ' !important; }\\\
-        n';\n  for (const c of chips) {\n    css += '.bubble-sub-button-' + c[0] + ' { background-color:\
-        \ '\n      + (on(c[1]) ? acc : idle) + ' !important; }\\n';\n  }\n  const held = hass.states['automation.switch_back_yard_slider_opens_turn_on_spotlight']?.state\
-        \ === 'off';\n  subButtonIcon[4]?.setAttribute('icon', held ? 'mdi:lock' : 'mdi:lock-open-variant');\n\
-        \  css += '.bubble-sub-button-5 { background-color: '\n    + (held ? 'rgba(255, 179, 0, 0.35)'\
-        \ : idle) + ' !important; }\\n';\n  return css;\n})()}\n"
+        .bubble-sub-button-3,\n.bubble-sub-button-4,\n.bubble-sub-button-5 {\n  transition: background-color\
+        \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const acc\
+        \ = 'rgba(var(--rgb-accent-color), 0.45)';\n  const idle = 'rgba(0,0,0,0.22)';\n  const chips\
+        \ = [[1, [\"light.patio_hue_discover_flood_light\"]], [2, [\"light.pavilion_fan_light\", \"fan.pavilion_fan_fan\"\
+        ]], [3, [\"light.downstairs_kitchen_back_yard_spotlight\", \"switch.back_yard_backyard_motion_light_relay\"\
+        ]], [4, [\"light.garage_back_yard_inovelli_dimmer\"]], [5, [\"switch.back_yard_retaining_wall_lights_relay\"\
+        ]]];\n  const held = hass.states['automation.switch_back_yard_slider_opens_turn_on_spotlight']?.state\
+        \ === 'off';\n  subButtonIcon[2]?.setAttribute('icon', held ? 'mdi:lock' : 'mdi:spotlight-beam');\n\
+        \  let css = '.bubble-icon-container { background-color: '\n    + (chips.some((c) => c[1].some(on))\
+        \ ? acc : idle) + ' !important; }\\n';\n  for (const c of chips) {\n    const bg = c[0] === 3\
+        \ && held ? 'rgba(255, 179, 0, 0.35)' : c[1].some(on) ? acc : idle;\n    css += '.bubble-sub-button-'\
+        \ + c[0] + ' { background-color: ' + bg + ' !important; }\\n';\n  }\n  return css;\n})()}\n"
     - type: custom:bubble-card
       card_type: separator
       name: Pool
@@ -1928,158 +1845,6 @@ views:
           rows: 5
     - type: custom:bubble-card
       card_type: pop-up
-      hash: '#tom-outdoor-calla'
-      button_type: name
-      width_desktop: 75vw
-      show_header: true
-      name: Return to Dashboard
-      show_icon: true
-      icon: mdi:arrow-left
-      show_name: true
-      margin: 7px
-      scrolling_effect: false
-      sub_button:
-        main: []
-        bottom:
-        - name: Back
-          icon: mdi:arrow-left
-          show_name: true
-          show_icon: true
-          tap_action:
-            action: navigate
-            navigation_path: '#'
-      tap_action:
-        action: navigate
-        navigation_path: '#'
-      button_action:
-        tap_action:
-          action: navigate
-          navigation_path: '#'
-      cards:
-      - type: markdown
-        text_only: true
-        card_mod:
-          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
-        content: '## Calla Lights
-
-          '
-      - type: custom:bubble-card
-        card_type: button
-        button_type: slider
-        entity: light.front_yard_hue_calla_lights
-        name: Calla
-        icon: mdi:power
-        show_state: true
-        tap_action:
-          action: toggle
-        card_layout: large-sub-buttons-grid
-        rows: 2.438
-        styles: "${(() => {\n  const st = hass.states['light.front_yard_hue_calla_lights'];\n  const b\
-          \ = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
-          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
-          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
-        sub_button:
-          main: []
-          bottom:
-          - name: Temperature
-            buttons_layout: inline
-            group:
-            - name: Temperature
-              sub_button_type: slider
-              light_slider_type: white_temp
-              icon: mdi:thermometer
-              always_visible: true
-              show_background: false
-              state_background: false
-          - name: Color
-            buttons_layout: inline
-            group:
-            - name: Color
-              sub_button_type: slider
-              light_slider_type: hue
-              icon: mdi:palette
-              always_visible: true
-              show_background: false
-              state_background: false
-          bottom_layout: rows
-    - type: custom:bubble-card
-      card_type: pop-up
-      hash: '#tom-outdoor-lily'
-      button_type: name
-      width_desktop: 75vw
-      show_header: true
-      name: Return to Dashboard
-      show_icon: true
-      icon: mdi:arrow-left
-      show_name: true
-      margin: 7px
-      scrolling_effect: false
-      sub_button:
-        main: []
-        bottom:
-        - name: Back
-          icon: mdi:arrow-left
-          show_name: true
-          show_icon: true
-          tap_action:
-            action: navigate
-            navigation_path: '#'
-      tap_action:
-        action: navigate
-        navigation_path: '#'
-      button_action:
-        tap_action:
-          action: navigate
-          navigation_path: '#'
-      cards:
-      - type: markdown
-        text_only: true
-        card_mod:
-          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
-        content: '## Lily Lights
-
-          '
-      - type: custom:bubble-card
-        card_type: button
-        button_type: slider
-        entity: light.front_yard_hue_lily_lights
-        name: Lily
-        icon: mdi:power
-        show_state: true
-        tap_action:
-          action: toggle
-        card_layout: large-sub-buttons-grid
-        rows: 2.438
-        styles: "${(() => {\n  const st = hass.states['light.front_yard_hue_lily_lights'];\n  const b\
-          \ = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
-          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
-          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
-        sub_button:
-          main: []
-          bottom:
-          - name: Temperature
-            buttons_layout: inline
-            group:
-            - name: Temperature
-              sub_button_type: slider
-              light_slider_type: white_temp
-              icon: mdi:thermometer
-              always_visible: true
-              show_background: false
-              state_background: false
-          - name: Color
-            buttons_layout: inline
-            group:
-            - name: Color
-              sub_button_type: slider
-              light_slider_type: hue
-              icon: mdi:palette
-              always_visible: true
-              show_background: false
-              state_background: false
-          bottom_layout: rows
-    - type: custom:bubble-card
-      card_type: pop-up
       hash: '#tom-outdoor-patio-flood'
       button_type: name
       width_desktop: 75vw
@@ -2188,14 +1953,14 @@ views:
         text_only: true
         card_mod:
           style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
-        content: '## Porch Lights
+        content: '## Porch
 
           '
       - type: custom:bubble-card
         card_type: button
         button_type: slider
         entity: light.outdoor_front_porch_lights
-        name: Porch
+        name: Recessed Lights
         icon: mdi:power
         show_state: true
         tap_action:
@@ -2230,9 +1995,39 @@ views:
               show_background: false
               state_background: false
           bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: light.downstairs_front_door_inovelli_on_off
+        name: Front Door Fixtures
+        icon: mdi:wall-sconce
+        show_state: true
+        tap_action:
+          action: toggle
+        button_action:
+          tap_action:
+            action: toggle
+          hold_action:
+            action: none
+          double_tap_action:
+            action: none
+        sub_button:
+          main: []
+          bottom: []
+        styles: ".bubble-icon-container {\n  transition: background-color 200ms ease;\n  background-color:\
+          \ ${(() => {\n    return hass.states['light.downstairs_front_door_inovelli_on_off']?.state ===\
+          \ 'on'\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+          }\n${(() => {\n  const st = hass.states['light.downstairs_front_door_inovelli_on_off'];\n  const\
+          \ b = st?.attributes?.brightness;\n  const txt = st?.state === 'on' ? 'On'\n    : st?.state\
+          \ === 'off' ? 'Off' : 'Unavailable';\n  return '.bubble-state { font-size: 0 !important; }\\\
+          n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
     - type: custom:bubble-card
       card_type: pop-up
-      hash: '#tom-outdoor-lamp-post'
+      hash: '#tom-outdoor-front-yard'
       button_type: name
       width_desktop: 75vw
       show_header: true
@@ -2264,9 +2059,87 @@ views:
         text_only: true
         card_mod:
           style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
-        content: '## Lamp Post
+        content: '## Front Yard
 
           '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.front_yard_hue_calla_lights
+        name: Calla
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.front_yard_hue_calla_lights'];\n  const b\
+          \ = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.front_yard_hue_lily_lights
+        name: Lily
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.front_yard_hue_lily_lights'];\n  const b\
+          \ = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
       - type: custom:bubble-card
         card_type: button
         button_type: slider
@@ -2308,7 +2181,7 @@ views:
           bottom_layout: rows
     - type: custom:bubble-card
       card_type: pop-up
-      hash: '#tom-outdoor-pavilion-light'
+      hash: '#tom-outdoor-pavilion'
       button_type: name
       width_desktop: 75vw
       show_header: true
@@ -2340,14 +2213,14 @@ views:
         text_only: true
         card_mod:
           style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
-        content: '## Pavilion Light
+        content: '## Pavilion
 
           '
       - type: custom:bubble-card
         card_type: button
         button_type: slider
         entity: light.pavilion_fan_light
-        name: Pavilion Light
+        name: Fan Light
         icon: mdi:power
         show_state: true
         tap_action:
@@ -2359,43 +2232,6 @@ views:
         sub_button:
           main: []
           bottom: []
-    - type: custom:bubble-card
-      card_type: pop-up
-      hash: '#tom-outdoor-pavilion-fan'
-      button_type: name
-      width_desktop: 75vw
-      show_header: true
-      name: Return to Dashboard
-      show_icon: true
-      icon: mdi:arrow-left
-      show_name: true
-      margin: 7px
-      scrolling_effect: false
-      sub_button:
-        main: []
-        bottom:
-        - name: Back
-          icon: mdi:arrow-left
-          show_name: true
-          show_icon: true
-          tap_action:
-            action: navigate
-            navigation_path: '#'
-      tap_action:
-        action: navigate
-        navigation_path: '#'
-      button_action:
-        tap_action:
-          action: navigate
-          navigation_path: '#'
-      cards:
-      - type: markdown
-        text_only: true
-        card_mod:
-          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
-        content: '## Pavilion Fan
-
-          '
       - type: custom:bubble-card
         card_type: button
         button_type: name
@@ -2566,6 +2402,136 @@ views:
           \    : (v === 7 ? 'On' : 'Speed ' + v + ' of 6') + (preset === 'breeze' ? ' · Breeze' : '');\n\
           \  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
           \ \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-outdoor-floodlight'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Floodlight
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: light.downstairs_kitchen_back_yard_spotlight
+        name: Floodlight
+        icon: mdi:spotlight-beam
+        show_state: true
+        tap_action:
+          action: toggle
+        button_action:
+          tap_action:
+            action: toggle
+          hold_action:
+            action: none
+          double_tap_action:
+            action: none
+        sub_button:
+          main: []
+          bottom: []
+        styles: ".bubble-icon-container {\n  transition: background-color 200ms ease;\n  background-color:\
+          \ ${(() => {\n    return hass.states['light.downstairs_kitchen_back_yard_spotlight']?.state\
+          \ === 'on'\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+          }\n${(() => {\n  const st = hass.states['light.downstairs_kitchen_back_yard_spotlight'];\n \
+          \ const b = st?.attributes?.brightness;\n  const txt = st?.state === 'on' ? 'On'\n    : st?.state\
+          \ === 'off' ? 'Off' : 'Unavailable';\n  return '.bubble-state { font-size: 0 !important; }\\\
+          n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: automation.switch_back_yard_slider_opens_turn_on_spotlight
+        name: Flood Hold
+        icon: mdi:lock-open-variant
+        show_state: true
+        tap_action:
+          action: perform-action
+          perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+          target: {}
+          data:
+            switch_name: downstairs_kitchen_back_yard_spotlight
+            hold_color: input_text.inovelli_manual_hold
+            prev_led_color_helper: input_number.outdoor_light_inovelli_led_color
+            automation_entity_ids:
+            - automation.switch_back_yard_slider_opens_turn_on_spotlight
+            - automation.switch_back_yard_camera_detects_motion_turn_on_lights
+            - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
+        button_action:
+          tap_action:
+            action: perform-action
+            perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+            target: {}
+            data:
+              switch_name: downstairs_kitchen_back_yard_spotlight
+              hold_color: input_text.inovelli_manual_hold
+              prev_led_color_helper: input_number.outdoor_light_inovelli_led_color
+              automation_entity_ids:
+              - automation.switch_back_yard_slider_opens_turn_on_spotlight
+              - automation.switch_back_yard_camera_detects_motion_turn_on_lights
+              - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
+        sub_button:
+          main: []
+          bottom: []
+        styles: ".bubble-icon-container { transition: background-color 200ms ease; }\n${(() => {\n  const\
+          \ held = hass.states['automation.switch_back_yard_slider_opens_turn_on_spotlight']?.state ===\
+          \ 'off';\n  icon?.setAttribute?.('icon', held ? 'mdi:lock' : 'mdi:lock-open-variant');\n  return\
+          \ '.bubble-icon-container { background-color: '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)')\
+          \ + ' !important; }\\n'\n    + '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
+          \ { content: \"' + (held ? 'On' : 'Off') + '\"; font-size: 12px; }';\n})()}\n"
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: switch.back_yard_backyard_motion_light_relay
+        name: Motion Light
+        icon: mdi:motion-sensor
+        show_state: true
+        tap_action:
+          action: toggle
+        button_action:
+          tap_action:
+            action: toggle
+        sub_button:
+          main: []
+          bottom: []
+        styles: ".bubble-icon-container {\n  transition: background-color 200ms ease;\n  background-color:\
+          \ ${(() => {\n    return hass.states['switch.back_yard_backyard_motion_light_relay']?.state\
+          \ === 'on'\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+          }\n${(() => {\n  const st = hass.states['switch.back_yard_backyard_motion_light_relay'];\n \
+          \ const b = st?.attributes?.brightness;\n  const txt = st?.state === 'on' ? 'On'\n    : st?.state\
+          \ === 'off' ? 'Off' : 'Unavailable';\n  return '.bubble-state { font-size: 0 !important; }\\\
+          n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
 - type: sections
   max_columns: 1
   title: Basement
