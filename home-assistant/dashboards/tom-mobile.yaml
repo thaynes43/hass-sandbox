@@ -1354,49 +1354,55 @@ views:
       sub_button:
         main: []
         bottom:
-        - entity: light.haynes_res_pool_lights
-          name: Lights
-          icon: mdi:lightbulb
-          show_name: true
-          show_icon: true
-          show_state: false
-          tap_action:
-            action: toggle
-        - entity: light.haynes_res_pool_lights
-          name: Color
-          icon: mdi:palette
-          show_name: true
-          show_icon: true
-          show_state: false
-          tap_action:
-            action: navigate
-            navigation_path: '#tom-pool-lights'
-        - entity: sensor.haynes_res_pool_last_temp
-          name: Water
-          icon: mdi:thermometer-water
-          show_name: true
-          show_icon: true
-          show_state: true
-          tap_action:
-            action: navigate
-            navigation_path: '#tom-pool-heat'
-        - entity: water_heater.haynes_res_pool
-          name: Set
-          icon: mdi:thermostat
-          show_name: true
-          show_icon: true
-          show_state: false
-          show_attribute: true
-          attribute: temperature
-          tap_action:
-            action: navigate
-            navigation_path: '#tom-pool-heat'
+        - name: Lights
+          buttons_layout: inline
+          group:
+            - entity: light.haynes_res_pool_lights
+              name: Lights
+              icon: mdi:lightbulb
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: toggle
+            - entity: light.haynes_res_pool_lights
+              name: Color
+              icon: mdi:palette
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: navigate
+                navigation_path: '#tom-pool-lights'
+        - name: Heat
+          buttons_layout: inline
+          group:
+            - entity: sensor.haynes_res_pool_last_temp
+              name: Water
+              icon: mdi:thermometer-water
+              show_name: true
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: navigate
+                navigation_path: '#tom-pool-heat'
+            - entity: water_heater.haynes_res_pool
+              name: Set
+              icon: mdi:thermostat
+              show_name: true
+              show_icon: true
+              show_state: false
+              show_attribute: true
+              attribute: temperature
+              tap_action:
+                action: navigate
+                navigation_path: '#tom-pool-heat'
         bottom_layout: rows
       styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4\
         \ {\n  transition: background-color 200ms ease;\n}\n.bubble-sub-button-1 {\n  background-color:\
         \ ${(() => {\n    return hass.states['light.haynes_res_pool_lights']?.state === 'on'\n      ?\
         \ 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}"
-      rows: 1.719
+      rows: 2.438
       slider_fill_orientation: left
       slider_value_position: right
     - type: custom:bubble-card
@@ -1407,7 +1413,7 @@ views:
         main: []
         bottom: []
     - type: grid
-      columns: 2
+      columns: 1
       square: false
       cards:
       - type: custom:bubble-card
