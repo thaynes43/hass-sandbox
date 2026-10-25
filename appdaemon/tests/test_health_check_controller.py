@@ -2216,6 +2216,65 @@ class TestAlertmanagerWiring:
 
         _close_created_coros(app)
 
+    def test_condition_metadata_survives_dependency_masking_but_not_ui(self):
+        """The bridge needs the category after dependency resolution, while
+        the existing HA/card check shape must not gain a new field."""
+        app, mock_client = self._setup_bridge_app()
+        conditions = {
+            "conditions": {
+                "physical": {"alertname": "CigarsUnhealthy", "labels": {"scope": "host"}},
+                "technical": {"alertname": "CigarsTelemetryFailure"},
+            }
+        }
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "zwave",
+                "checker_name": "Z-Wave",
+                "check_names": ["Integration"],
+            }),
+        }, {})
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "cigar_humidity",
+                "checker_name": "Cigars",
+                "check_names": ["Humidity"],
+                "dependencies": [{"checker_id": "zwave", "affects_checks": ["Humidity"]}],
+                "alerting": conditions,
+            }),
+        }, {})
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "zwave",
+                "results": [{"name": "Integration", "status": "critical", "detail": "down"}],
+            }),
+        }, {})
+        _run(_last_created_coro(app))
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "cigar_humidity",
+                "results": [{
+                    "name": "Humidity", "status": "critical", "detail": "75%",
+                    "alert_category": "physical",
+                }],
+            }),
+        }, {})
+        _run(_last_created_coro(app))
+
+        # Internally retained, then masked to unknown by the dependency.
+        assert app._checkers["cigar_humidity"]["checks"][0]["alert_category"] == "physical"
+        assert ("cigar_humidity", "physical") not in app._alert_bridge.active_alerts
+        # The original card payload stays exactly a name/status/detail/timestamp check.
+        attrs = app.set_state.call_args.kwargs["attributes"]
+        assert "alert_category" not in attrs["checkers"]["cigar_humidity"]["checks"][0]
+        # The existing metric/export path still keys its data by checker ID.
+        assert mock_client.post_alerts.await_args_list[-1][0][0][0]["labels"]["checker"] == "zwave"
+
+        _close_created_coros(app)
+
 
 class TestEmptyResultsRepairReport:
     """Repair-status-only reports (results=[]) must not wipe checker state.
@@ -2403,6 +2462,32 @@ class TestMute:
         snapshot = app._alert_bridge.sync.call_args[0][0]
         assert snapshot["spa"]["alerting"] == {"enabled": False}
 
+        _close_created_coros(app)
+
+    def test_muted_condition_checker_keeps_both_conditions_and_disables_all(self):
+        app = _make_app(ALERTMANAGER_ARGS)
+        _startup(app)
+        alerting = {
+            "conditions": {
+                "physical": {"alertname": "CigarsUnhealthy", "labels": {"scope": "host"}},
+                "technical": {"alertname": "CigarsTelemetryFailure"},
+            }
+        }
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "cigars",
+                "checker_name": "Cigars",
+                "check_names": ["Humidity"],
+                "alerting": alerting,
+            }),
+        }, {})
+        app._alert_bridge.sync = MagicMock()
+
+        self._mute(app, checker_id="cigars")
+
+        snapshot = app._alert_bridge.sync.call_args[0][0]
+        assert snapshot["cigars"]["alerting"] == {**alerting, "enabled": False}
         _close_created_coros(app)
 
     # -- unmute_checker -------------------------------------------------------

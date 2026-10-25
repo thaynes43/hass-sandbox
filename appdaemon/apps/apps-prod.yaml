@@ -960,6 +960,17 @@ cigar_humidity_checker:
   humidity_high_warning: 70
   humidity_low_critical: 60
   humidity_high_critical: 74
+  # Keep one Cigars tile while splitting its Alertmanager ownership: real
+  # humidity conditions are owner-actionable, while a bad sensor reading is
+  # responder-eligible telemetry.
+  alerting:
+    conditions:
+      physical:
+        alertname: CigarsUnhealthy
+        labels:
+          scope: host
+      technical:
+        alertname: CigarsTelemetryFailure
   sensors:
     - entity_id: sensor.cigar_humidity_sensor_01_humidity
       name: Tupperdor 01
@@ -1144,6 +1155,14 @@ zwave_battery_checker:
   check_interval_s: 300
   warning_threshold: 20
   critical_threshold: 10
+  alerting:
+    conditions:
+      physical:
+        alertname: ZWaveBatteriesUnhealthy
+        labels:
+          scope: host
+      technical:
+        alertname: ZWaveBatteriesTelemetryFailure
   health_dependencies:
     - checker_id: zwave
   entity_patterns:
@@ -1165,6 +1184,14 @@ shade_battery_checker:
   # now — on G3 a 20 is always a real measurement, never an RF artifact).
   warning_threshold: 50
   critical_threshold: 20
+  alerting:
+    conditions:
+      physical:
+        alertname: ShadeBatteriesUnhealthy
+        labels:
+          scope: host
+      technical:
+        alertname: ShadeBatteriesTelemetryFailure
   # An implausible drop (was >=40%, now <=5%) is a suspected PowerView
   # gateway/RF disconnect, not a real battery — downgrade to warning
   # (UI-only) instead of paging. ShadeGatewayChecker owns paging for the
@@ -1228,6 +1255,14 @@ lock_battery_checker:
   check_interval_s: 300
   warning_threshold: 25
   critical_threshold: 10
+  alerting:
+    conditions:
+      physical:
+        alertname: SchlageUnhealthy
+        labels:
+          scope: host
+      technical:
+        alertname: SchlageTelemetryFailure
   health_dependencies:
     - checker_id: cloud
   entity_patterns:
@@ -1242,6 +1277,14 @@ airthings_battery_checker:
   check_interval_s: 300
   warning_threshold: 20
   critical_threshold: 5
+  alerting:
+    conditions:
+      physical:
+        alertname: AirthingsUnhealthy
+        labels:
+          scope: host
+      technical:
+        alertname: AirthingsTelemetryFailure
   entity_patterns:
     - include: "sensor\\.(livingroom_view_plus|basement_view_radon|primary_bedroom_wave_plus|primary_bathroom|basement_wave_mini|laundry_room_wave_mini)_battery$"
   # Wave Mini (3x AAA) reports a knee, not a line: it drifts ~1-2 points a
@@ -1275,6 +1318,14 @@ protect_battery_checker:
   check_interval_s: 300
   warning_threshold: 20
   critical_threshold: 10
+  alerting:
+    conditions:
+      physical:
+        alertname: UniFiBatteriesUnhealthy
+        labels:
+          scope: host
+      technical:
+        alertname: UniFiBatteriesTelemetryFailure
   entity_patterns:
     - include: "sensor\\..*usl_entry_battery.*"
     - include: "sensor\\..*_usl_entry_battery$"
@@ -1293,6 +1344,14 @@ zigbee_battery_checker:
   check_interval_s: 300
   warning_threshold: 20
   critical_threshold: 10
+  alerting:
+    conditions:
+      physical:
+        alertname: ZigbeeBatteriesUnhealthy
+        labels:
+          scope: host
+      technical:
+        alertname: ZigbeeBatteriesTelemetryFailure
   health_dependencies:
     - checker_id: zigbee
   entity_patterns:
@@ -1305,6 +1364,14 @@ ups_checker:
   checker_id: ups
   checker_name: UPS
   check_interval_s: 120
+  alerting:
+    conditions:
+      physical:
+        alertname: UPSUnhealthy
+        labels:
+          scope: host
+      technical:
+        alertname: UPSTelemetryFailure
   ups_devices:
     - name: APC 2700W
       battery_entity: sensor.apc_2700w_battery_charge

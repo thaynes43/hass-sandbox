@@ -126,6 +126,29 @@ def _batches(client: MagicMock) -> List[List[Dict[str, Any]]]:
     return [c.args[0] for c in client.post_alerts.await_args_list]
 
 
+def _split_alerting() -> Dict[str, Any]:
+    """The fixed owner-condition contract used by scoped health checkers."""
+    return {
+        "conditions": {
+            "physical": {
+                "alertname": "CigarsUnhealthy",
+                "labels": {"scope": "host"},
+            },
+            "technical": {"alertname": "CigarsTelemetryFailure"},
+        },
+    }
+
+
+def _split_checker(checks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """A resolved Cigar checker whose bridge splits result categories."""
+    return _checker(
+        "critical",
+        name="Cigars",
+        checks=checks,
+        alerting=_split_alerting(),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tests — Raising alerts
 # ---------------------------------------------------------------------------
@@ -306,6 +329,282 @@ class TestAlertingConfig:
         alert = _batches(client)[0][0]
         assert alert["labels"]["alertname"] == "ProtectEventStreamFrozen"
         assert alert["labels"]["checker"] == "protect"
+
+
+class TestConditionAlerts:
+    """Physical/technical streams keep one UI checker but alert independently."""
+
+    def test_mixed_failures_raise_two_independent_alerts(self):
+        bridge, client, _log = _make_bridge()
+        checker = _split_checker([
+            {
+                "name": "Tupperdor 01",
+                "status": "critical",
+                "detail": "humidity: 75.0 (above critical 74)",
+                "alert_category": "physical",
+            },
+            {
+                "name": "Jar 01",
+                "status": "critical",
+                "detail": "state: unavailable",
+                "alert_category": "technical",
+            },
+        ])
+
+        _run(bridge.sync({"cigar_humidity": checker}))
+
+        batch = _batches(client)[0]
+        assert {a["labels"]["alertname"] for a in batch} == {
+            "CigarsUnhealthy", "CigarsTelemetryFailure"
+        }
+        physical = next(a for a in batch if a["labels"]["alertname"] == "CigarsUnhealthy")
+        technical = next(a for a in batch if a["labels"]["alertname"] == "CigarsTelemetryFailure")
+        assert physical["labels"]["scope"] == "host"
+        assert "scope" not in technical["labels"]
+        assert ("cigar_humidity", "physical") in bridge.active_alerts
+        assert ("cigar_humidity", "technical") in bridge.active_alerts
+
+    def test_condition_recovery_resolves_only_its_own_stream(self):
+        bridge, client, _log = _make_bridge()
+        both = _split_checker([
+            {"name": "Humidity", "status": "critical", "detail": "75%", "alert_category": "physical"},
+            {"name": "Sensor", "status": "critical", "detail": "unavailable", "alert_category": "technical"},
+        ])
+        _run(bridge.sync({"cigar_humidity": both}))
+        client.post_alerts.reset_mock()
+
+        technical_only = _split_checker([
+            {"name": "Humidity", "status": "ok", "detail": "65%", "alert_category": "physical"},
+            {"name": "Sensor", "status": "critical", "detail": "unavailable", "alert_category": "technical"},
+        ])
+        _run(bridge.sync({"cigar_humidity": technical_only}))
+
+        (batch,) = _batches(client)
+        assert len(batch) == 1
+        assert batch[0]["labels"]["alertname"] == "CigarsUnhealthy"
+        assert "endsAt" in batch[0]
+        assert ("cigar_humidity", "physical") not in bridge.active_alerts
+        assert ("cigar_humidity", "technical") in bridge.active_alerts
+
+    def test_category_change_drops_old_pending_and_starts_new_gate(self):
+        bridge, client, _log, advance = _make_gated_bridge({"critical": 300})
+        physical = _split_checker([
+            {"name": "Humidity", "status": "critical", "detail": "75%", "alert_category": "physical"},
+        ])
+        _run(bridge.sync({"cigar_humidity": physical}))
+        assert ("cigar_humidity", "physical") in bridge.pending_alerts
+
+        technical = _split_checker([
+            {"name": "Humidity", "status": "critical", "detail": "unavailable", "alert_category": "technical"},
+        ])
+        advance(300)
+        _run(bridge.sync({"cigar_humidity": technical}))
+        assert ("cigar_humidity", "physical") not in bridge.pending_alerts
+        assert ("cigar_humidity", "technical") in bridge.pending_alerts
+        client.post_alerts.assert_not_awaited()
+
+        advance(300)
+        _run(bridge.sync({"cigar_humidity": technical}))
+        (batch,) = _batches(client)
+        assert batch[0]["labels"]["alertname"] == "CigarsTelemetryFailure"
+
+    def test_streams_keep_severity_gates_and_recovery_holds_independent(self):
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300, "warning": 600}, improve_hold_s=900
+        )
+        mixed = _split_checker([
+            {
+                "name": "Humidity",
+                "status": "critical",
+                "detail": "75%",
+                "alert_category": "physical",
+            },
+            {
+                "name": "Sensor",
+                "status": "warning",
+                "detail": "intermittent telemetry",
+                "alert_category": "technical",
+            },
+        ])
+
+        # The two streams begin pending at the same report but honor their
+        # own severity-specific gates.
+        _run(bridge.sync({"cigar_humidity": mixed}))
+        assert set(bridge.pending_alerts) == {
+            ("cigar_humidity", "physical"),
+            ("cigar_humidity", "technical"),
+        }
+
+        advance(300)
+        _run(bridge.sync({"cigar_humidity": mixed}))
+        assert ("cigar_humidity", "physical") in bridge.active_alerts
+        assert ("cigar_humidity", "technical") in bridge.pending_alerts
+        assert _batches(client)[0][0]["labels"]["severity"] == "critical"
+
+        physical_recovered = _split_checker([
+            {
+                "name": "Humidity",
+                "status": "ok",
+                "detail": "65%",
+                "alert_category": "physical",
+            },
+            {
+                "name": "Sensor",
+                "status": "warning",
+                "detail": "intermittent telemetry",
+                "alert_category": "technical",
+            },
+        ])
+        advance(300)
+        _run(bridge.sync({"cigar_humidity": physical_recovered}))
+        assert ("cigar_humidity", "physical") in bridge.active_alerts
+        assert ("cigar_humidity", "technical") in bridge.active_alerts
+        assert _batches(client)[1][0]["labels"]["severity"] == "warning"
+
+        # The physical recovery is held independently; the technical stream
+        # remains firing rather than being resolved with it.
+        advance(900)
+        _run(bridge.sync({"cigar_humidity": physical_recovered}))
+        resolution = _batches(client)[2][0]
+        assert resolution["labels"]["alertname"] == "CigarsUnhealthy"
+        assert "endsAt" in resolution
+        assert ("cigar_humidity", "physical") not in bridge.active_alerts
+        assert ("cigar_humidity", "technical") in bridge.active_alerts
+
+    def test_ups_condition_uses_original_checker_override_immediately(self):
+        bridge, client, _log, _advance = _make_gated_bridge(
+            {"critical": 300}, for_overrides={"ups": {"critical": 0}}
+        )
+        checker = _checker(
+            "critical",
+            name="UPS",
+            checks=[
+                {"name": "APC Battery", "status": "critical", "detail": "40%", "alert_category": "physical"},
+                {"name": "APC Load", "status": "critical", "detail": "unavailable", "alert_category": "technical"},
+            ],
+            alerting={
+                "conditions": {
+                    "physical": {"alertname": "UPSUnhealthy", "labels": {"scope": "host"}},
+                    "technical": {"alertname": "UPSTelemetryFailure"},
+                }
+            },
+        )
+
+        _run(bridge.sync({"ups": checker}))
+
+        assert ("ups", "physical") in bridge.active_alerts
+        assert ("ups", "technical") in bridge.active_alerts
+        assert bridge.pending_alerts == {}
+        assert len(_batches(client)[0]) == 2
+
+    def test_mute_and_forget_clear_all_condition_streams(self):
+        bridge, client, _log = _make_bridge()
+        firing = _split_checker([
+            {"name": "Humidity", "status": "critical", "detail": "75%", "alert_category": "physical"},
+            {"name": "Sensor", "status": "critical", "detail": "unavailable", "alert_category": "technical"},
+        ])
+        _run(bridge.sync({"cigar_humidity": firing}))
+        client.post_alerts.reset_mock()
+
+        muted = dict(firing)
+        muted["alerting"] = {**firing["alerting"], "enabled": False}
+        _run(bridge.sync({"cigar_humidity": muted}))
+        (mute_batch,) = _batches(client)
+        assert len(mute_batch) == 2
+        assert all("endsAt" in alert for alert in mute_batch)
+        assert bridge.active_alerts == {}
+
+        client.post_alerts.reset_mock()
+        _run(bridge.sync({"cigar_humidity": firing}))
+        _run(bridge.forget("cigar_humidity", "checker removed"))
+        assert bridge.active_alerts == {}
+        assert bridge.pending_alerts == {}
+        forget_batch = _batches(client)[-1]
+        assert len(forget_batch) == 2
+        assert all("endsAt" in alert for alert in forget_batch)
+
+    def test_mute_bypasses_improvement_hold_for_every_condition(self):
+        bridge, client, _log, _advance = _make_gated_bridge(
+            {}, improve_hold_s=900
+        )
+        firing = _split_checker([
+            {"name": "Humidity", "status": "critical", "detail": "75%", "alert_category": "physical"},
+            {"name": "Sensor", "status": "critical", "detail": "unavailable", "alert_category": "technical"},
+        ])
+        _run(bridge.sync({"cigar_humidity": firing}))
+        client.post_alerts.reset_mock()
+
+        muted = dict(firing)
+        muted["alerting"] = {**firing["alerting"], "enabled": False}
+        _run(bridge.sync({"cigar_humidity": muted}))
+
+        (batch,) = _batches(client)
+        assert len(batch) == 2
+        assert all("endsAt" in alert for alert in batch)
+        assert bridge.active_alerts == {}
+        assert bridge.pending_alerts == {}
+
+    @pytest.mark.parametrize(
+        "conditions",
+        [
+            {"physical": {"alertname": "bad"}},
+            {
+                "physical": {
+                    "alertname": "CigarsUnhealthy",
+                    "labels": {"scope": "host", "severity": "warning"},
+                },
+                "technical": {"alertname": "CigarsTelemetryFailure"},
+            },
+            {
+                "physical": {
+                    "alertname": "CigarsUnhealthy",
+                    "labels": {"scope": "host"},
+                },
+                "technical": {
+                    "alertname": "CigarsTelemetryFailure",
+                    "labels": {"scope": "host"},
+                },
+            },
+        ],
+    )
+    def test_invalid_conditions_fail_open_without_host_scope(self, conditions):
+        bridge, client, log = _make_bridge()
+        checker = _split_checker([
+            {"name": "Humidity", "status": "critical", "detail": "75%", "alert_category": "physical"},
+            {"name": "Sensor", "status": "critical", "detail": "unavailable", "alert_category": "technical"},
+        ])
+        _run(bridge.sync({"cigar_humidity": checker}))
+        client.post_alerts.reset_mock()
+
+        invalid = dict(checker)
+        invalid["alerting"] = {
+            # A malformed condition config must not make this legacy field a
+            # responder-suppressing escape hatch.
+            "labels": {"scope": "host"},
+            "conditions": conditions,
+        }
+        _run(bridge.sync({"cigar_humidity": invalid}))
+
+        batch = _batches(client)[0]
+        firing = [alert for alert in batch if "endsAt" not in alert]
+        assert len(firing) == 1
+        assert firing[0]["labels"]["alertname"] == "CigarsUnhealthy"
+        assert "scope" not in firing[0]["labels"]
+        assert "cigar_humidity" in bridge.active_alerts
+        assert any("responder-eligible aggregate" in str(call) for call in log.call_args_list)
+
+    def test_bad_category_routes_to_responder_eligible_technical_stream(self):
+        bridge, client, log = _make_bridge()
+        checker = _split_checker([
+            {"name": "Humidity", "status": "critical", "detail": "bad value", "alert_category": "bogus"},
+        ])
+
+        _run(bridge.sync({"cigar_humidity": checker}))
+
+        alert = _batches(client)[0][0]
+        assert alert["labels"]["alertname"] == "CigarsTelemetryFailure"
+        assert "scope" not in alert["labels"]
+        assert any("responder-eligible technical" in str(call) for call in log.call_args_list)
 
 
 # ---------------------------------------------------------------------------

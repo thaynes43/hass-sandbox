@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -70,6 +71,7 @@ class BatteryChecker(hass.Hass):
         self._checker_id: str = args.get("checker_id", "batteries")
         self._checker_name: str = args.get("checker_name", "Batteries")
         self._check_interval_s: int = int(args.get("check_interval_s", 300))
+        self._alerting: Dict[str, Any] = dict(args.get("alerting") or {})
 
         # Default thresholds (percentage)
         self._warning_threshold: float = float(args.get("warning_threshold", 20))
@@ -377,6 +379,8 @@ class BatteryChecker(hass.Hass):
         }
         if dependencies:
             payload["dependencies"] = dependencies
+        if self._alerting:
+            payload["alerting"] = self._alerting
 
         self.fire_event(
             "health_check_command",
@@ -477,6 +481,13 @@ class BatteryChecker(hass.Hass):
             # Internal-only key used to populate the metrics payload below;
             # never sent as part of a check's "results" entry.
             metric_value = result.pop("_metric_value", None)
+            # A numeric percentage is a physical battery condition. An
+            # unreadable/non-finite state remains this checker's established
+            # ``unknown`` no-page policy, while retaining its internal
+            # telemetry category for the bridge.
+            result["alert_category"] = (
+                "physical" if metric_value is not None else "technical"
+            )
             results.append(result)
             if metric_value is not None:
                 metrics.append({
@@ -589,6 +600,8 @@ class BatteryChecker(hass.Hass):
             value = float(state)
         except (ValueError, TypeError):
             return {"name": display_name, "status": "unknown", "detail": f"non-numeric state: {state}"}
+        if not math.isfinite(value):
+            return {"name": display_name, "status": "unknown", "detail": f"non-finite state: {state}"}
 
         warning_threshold, critical_threshold = self._thresholds_for(entity_id)
 

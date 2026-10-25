@@ -203,6 +203,21 @@ class TestRegistration:
         assert payload["checker_id"] == "cigar_humidity"
         assert payload["checker_name"] == "Cigar Room Humidity"
 
+    def test_forwards_alert_condition_config(self):
+        alerting = {
+            "conditions": {
+                "physical": {"alertname": "CigarsUnhealthy", "labels": {"scope": "host"}},
+                "technical": {"alertname": "CigarsTelemetryFailure"},
+            }
+        }
+        app = _make_app({"alerting": alerting})
+        _startup(app)
+        register = next(
+            call for call in app.fire_event.call_args_list
+            if call[1].get("command") == "register_checker"
+        )
+        assert json.loads(register[1]["payload"])["alerting"] == alerting
+
 
 # ------------------------------------------------------------------
 # Threshold evaluation
@@ -510,6 +525,9 @@ class TestRunChecks:
         assert results[0]["status"] == "ok"
         assert results[1]["status"] == "critical"
         assert results[2]["status"] == "warning"
+        assert [result["alert_category"] for result in results] == [
+            "physical", "technical", "physical"
+        ]
 
     def test_logs_warning_when_issues_found(self):
         app = _make_app()
@@ -734,6 +752,18 @@ class TestMetricsEmission:
         status, detail, value = app._evaluate_sensor_with_value(app._sensors[0])
         assert status == "ok"
         assert value == 65.0
+
+    @pytest.mark.parametrize("state", ["NaN", "inf", "-inf"])
+    def test_non_finite_sensor_value_is_technical_failure(self, state):
+        app = _make_app()
+        _init_only(app)
+        app.get_state = MagicMock(return_value=state)
+
+        status, detail, value = app._evaluate_sensor_with_value(app._sensors[0])
+
+        assert status == "critical"
+        assert "non-finite" in detail
+        assert value is None
 
     def test_evaluate_sensor_backward_compatible_two_tuple(self):
         """_evaluate_sensor must keep returning a plain (status, detail) tuple."""

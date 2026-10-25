@@ -71,7 +71,20 @@ cigar_humidity_checker:
       # Per-sensor threshold overrides (optional)
       humidity_low_warning: 63
       humidity_high_warning: 67
+
+  # Optional Alertmanager split for owner-action values vs bad telemetry.
+  # Production Cigar monitoring uses this with nine humidity sensors only.
+  alerting:
+    conditions:
+      physical:
+        alertname: CigarsUnhealthy
+        labels:
+          scope: host
+      technical:
+        alertname: CigarsTelemetryFailure
 ```
+
+For a split alert, a numeric value outside its threshold is a physical condition. An unavailable, non-numeric, or non-finite sensor reading is technical. The dashboard still publishes one `cigar_humidity` checker with all of its checks. `scope: host` makes the physical alert owner-actionable and skipped by the installed responder; the technical alert has no scope and stays responder eligible. See [Alertmanager Bridge](../../README.md#alertmanager-bridge) for the fixed condition contract and mute behavior.
 
 ### Sensor Types
 

@@ -335,6 +335,24 @@ class TestRegistration:
         dep_ids = {d["checker_id"] for d in deps}
         assert dep_ids == {"mqtt_broker", "zigbee"}
 
+    def test_forwards_alert_condition_config(self):
+        alerting = {
+            "conditions": {
+                "physical": {
+                    "alertname": "TestBatteriesUnhealthy",
+                    "labels": {"scope": "host"},
+                },
+                "technical": {"alertname": "TestBatteriesTelemetryFailure"},
+            }
+        }
+        app = _make_app({"alerting": alerting})
+        _startup(app)
+        register = next(
+            call for call in app.fire_event.call_args_list
+            if call[1].get("command") == "register_checker"
+        )
+        assert json.loads(register[1]["payload"])["alerting"] == alerting
+
 
 # ------------------------------------------------------------------
 # Threshold evaluation
@@ -504,6 +522,9 @@ class TestRunChecks:
         results = payload["results"]
         assert results[0]["status"] == "ok"
         assert results[1]["status"] == "unknown"
+        assert [result["alert_category"] for result in results] == [
+            "physical", "technical"
+        ]
 
     def test_logs_warning_when_issues_found(self):
         app = _make_app()
@@ -623,6 +644,18 @@ class TestMetrics:
         app.get_state = MagicMock(return_value="42")
         result = app._evaluate_entity("sensor.test_a", "Device A")
         assert result["_metric_value"] == 42.0
+
+    @pytest.mark.parametrize("state", ["NaN", "inf", "-inf"])
+    def test_non_finite_battery_value_keeps_unknown_no_page_policy(self, state):
+        app = _make_app()
+        _init_only(app)
+        app.get_state = MagicMock(return_value=state)
+
+        result = app._evaluate_entity("sensor.test_a", "Device A")
+
+        assert result["status"] == "unknown"
+        assert "non-finite" in result["detail"]
+        assert "_metric_value" not in result
 
 
 # ------------------------------------------------------------------
@@ -1366,3 +1399,32 @@ class TestAirthingsProdConfig:
         for name in ("Primary Bedroom Wave Plus", "First Floor View Plus",
                      "Basement View Radon"):
             assert by_name[name]["status"] == "ok", by_name[name]
+
+
+class TestProductionOwnerConditionConfigs:
+    """Every requested checker uses the same safe two-condition contract."""
+
+    _CONFIGS = {
+        "cigar_humidity_checker": ("CigarsUnhealthy", "CigarsTelemetryFailure"),
+        "zwave_battery_checker": ("ZWaveBatteriesUnhealthy", "ZWaveBatteriesTelemetryFailure"),
+        "shade_battery_checker": ("ShadeBatteriesUnhealthy", "ShadeBatteriesTelemetryFailure"),
+        "lock_battery_checker": ("SchlageUnhealthy", "SchlageTelemetryFailure"),
+        "airthings_battery_checker": ("AirthingsUnhealthy", "AirthingsTelemetryFailure"),
+        "protect_battery_checker": ("UniFiBatteriesUnhealthy", "UniFiBatteriesTelemetryFailure"),
+        "zigbee_battery_checker": ("ZigbeeBatteriesUnhealthy", "ZigbeeBatteriesTelemetryFailure"),
+        "ups_checker": ("UPSUnhealthy", "UPSTelemetryFailure"),
+    }
+
+    def test_all_owner_condition_checkers_have_physical_and_technical_alerts(self):
+        for app_key, (physical_name, technical_name) in self._CONFIGS.items():
+            conditions = _load_prod_checker_args(app_key)["alerting"]["conditions"]
+            assert conditions["physical"] == {
+                "alertname": physical_name,
+                "labels": {"scope": "host"},
+            }
+            assert conditions["technical"] == {"alertname": technical_name}
+
+    def test_cigar_production_config_keeps_humidity_only_monitoring(self):
+        cigar = _load_prod_checker_args("cigar_humidity_checker")
+        assert len(cigar["sensors"]) == 9
+        assert {sensor["type"] for sensor in cigar["sensors"]} == {"humidity"}

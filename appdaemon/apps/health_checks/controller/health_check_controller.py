@@ -565,7 +565,7 @@ class HealthCheckController(hass.Hass):
         checker = self._checkers[checker_id]
         now = datetime.datetime.now()
         now_iso = now.isoformat(timespec="seconds")
-        results: List[Dict[str, str]] = payload.get("results", [])
+        results: List[Dict[str, Any]] = payload.get("results", [])
 
         # Build a lookup from existing checks for tracking changes
         old_checks = {c["name"]: c for c in checker["checks"]}
@@ -611,12 +611,20 @@ class HealthCheckController(hass.Hass):
             else:
                 last_changed = old.get("last_changed")
 
-            new_checks.append({
+            new_check: Dict[str, Any] = {
                 "name": name,
                 "status": status,
                 "detail": detail,
                 "last_changed": last_changed,
-            })
+            }
+            # Checkers can classify a failing result for Alertmanager without
+            # altering the aggregate checker or its HA tile.  Keep the marker
+            # internally so dependency masking (which deep-copies checks)
+            # reaches the bridge with the correct category; _checker_attrs
+            # deliberately removes it from the published UI shape below.
+            if "alert_category" in result:
+                new_check["alert_category"] = result["alert_category"]
+            new_checks.append(new_check)
 
             if status == "critical":
                 worst_status = "critical"
@@ -1647,11 +1655,19 @@ class HealthCheckController(hass.Hass):
         else:
             published_checks = all_checks
 
+        # ``alert_category`` is bridge-only metadata. Do not add a new field
+        # to the existing sensor payload/card contract while selecting which
+        # condition Alertmanager receives.
+        public_checks = [
+            {key: value for key, value in check.items() if key != "alert_category"}
+            for check in published_checks
+        ]
+
         return {
             "name": c["name"],
             "status": c["status"],
             "last_check": c["last_check"],
-            "checks": published_checks,
+            "checks": public_checks,
             "checks_summary": {
                 "total": total,
                 "ok": ok_count,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -27,6 +28,7 @@ class TempHumidityChecker(hass.Hass):
         self._checker_id: str = args.get("checker_id", "temp_humidity")
         self._checker_name: str = args.get("checker_name", "Temp/Humidity")
         self._check_interval_s: int = int(args.get("check_interval_s", 120))
+        self._alerting: Dict[str, Any] = dict(args.get("alerting") or {})
 
         # Default thresholds
         self._defaults: Dict[str, float] = {
@@ -134,6 +136,8 @@ class TempHumidityChecker(hass.Hass):
         }
         if dependencies:
             payload["dependencies"] = dependencies
+        if self._alerting:
+            payload["alerting"] = self._alerting
 
         self.fire_event(
             "health_check_command",
@@ -179,7 +183,7 @@ class TempHumidityChecker(hass.Hass):
 
     def _run_checks(self) -> None:
         """Execute all configured checks and report results."""
-        results: List[Dict[str, str]] = []
+        results: List[Dict[str, Any]] = []
         metrics: List[Dict[str, Any]] = []
 
         for sensor in self._sensors:
@@ -188,6 +192,7 @@ class TempHumidityChecker(hass.Hass):
                 "name": sensor["name"],
                 "status": status,
                 "detail": detail,
+                "alert_category": "physical" if value is not None else "technical",
             })
             if value is not None:
                 for metric_name in self._metric_names_for_type(sensor["type"]):
@@ -256,6 +261,8 @@ class TempHumidityChecker(hass.Hass):
             value = float(state)
         except (ValueError, TypeError):
             return ("critical", f"non-numeric state: {state}", None)
+        if not math.isfinite(value):
+            return ("critical", f"non-finite state: {state}", None)
 
         sensor_type = sensor["type"]
 
