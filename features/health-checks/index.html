@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
       
       
 
@@ -1771,6 +1771,7 @@
 <li><strong>Recovery resolves once it sticks.</strong> When a checker reports healthy again the controller resolves the alert and the phone gets the matching <code>[RESOLVED]</code> notification — after a short hold that proves the recovery is real (see <em>One page per incident</em> below), so no lingering stale alerts and no resolve-then-refire ping-pong.</li>
 </ul>
 <p>Each alert carries the failing check details in its description, so the notification usually tells the whole story on its own ("Event stream frozen for 3.2h — no genuine event since detection"). While an alert is firing, the controller re-posts it every two minutes to keep it alive (Alertmanager expires silent alerts after five), and if Alertmanager itself is down, health checking carries on unaffected — posts are simply retried until it returns.</p>
+<p>The Cigars, battery, and UPS tiles remain single tiles that show every check. Their alerts distinguish an owner-action value such as low humidity, a low battery, or UPS charge/load outside its threshold from broken sensor telemetry. Owner-action alerts are marked for the host and skipped by the automated responder. Telemetry alerts remain eligible for the responder, so a failed sensor is not hidden behind an owner-action skip. The two alert conditions can fire and recover independently while the tile continues to show their combined health. Missing or malformed ordinary battery readings still show as <code>unknown</code> and do not page; UPS telemetry failures remain critical.</p>
 <p>Checkers can customize their alert name in config (e.g. <code>ProtectEventStreamFrozen</code>, <code>ImageGenQueueStuck</code>) or opt out of alerting entirely.</p>
 <h3 id="smarter-than-a-tripwire">Smarter Than a Tripwire</h3>
 <p>A page that fires on every momentary blip trains you to ignore it, so the paging path is deliberately patient:</p>
@@ -1792,7 +1793,7 @@
 <p>Alertmanager runs as an HA pair, and the pair gossips silences and the notification log — but <strong>not</strong> the alert set itself. Prometheus handles this by sending every alert to every replica; a direct poster has to do the same. Posting through the load-balanced Service left each replica with a different, partial view of which alerts existed, their notification logs never lined up, and both replicas paged for the same incident.</p>
 <p>The controller now posts to the <strong>headless</strong> Service and fans each batch out to every address it resolves to, concurrently — one POST per replica, per cycle. A post counts as delivered if at least one replica accepts it, so a replica being down degrades to the old single-replica behaviour instead of losing the page. A hostname that resolves to a single address (or an IP outright) takes exactly the original code path.</p>
 <h3 id="muting-a-checker">Muting a Checker</h3>
-<p>Sometimes you already know about a problem and don't want to be paged about it — a camera is unplugged for the season, or you're mid-maintenance on the spa. Every checker in the detail popup has an <strong>Alerting</strong> row with <strong>Mute 1d</strong>, <strong>Mute 7d</strong>, and indefinite <strong>Mute</strong> buttons (and <strong>Unmute</strong> to lift it). A muted checker keeps running and still shows its true status on the dashboard — with a <strong>MUTED</strong> badge in its header — but it won't page while muted. Timed mutes lift themselves automatically when they expire, and a mute survives an AppDaemon restart, so a 7-day mute really lasts 7 days.</p>
+<p>Sometimes you already know about a problem and don't want to be paged about it — a camera is unplugged for the season, or you're mid-maintenance on the spa. Every checker in the detail popup has an <strong>Alerting</strong> row with <strong>Mute 1d</strong>, <strong>Mute 7d</strong>, and indefinite <strong>Mute</strong> buttons (and <strong>Unmute</strong> to lift it). A muted checker keeps running and still shows its true status on the dashboard — with a <strong>MUTED</strong> badge in its header — but it won't page while muted. A mute resolves all of that checker's alert conditions immediately, including an alert awaiting its normal recovery hold. Timed mutes lift themselves automatically when they expire, and a mute survives an AppDaemon restart, so a 7-day mute really lasts 7 days.</p>
 <h3 id="auto-heal-first-page-if-that-fails">Auto-Heal First, Page If That Fails</h3>
 <p>The checkers that drove this integration span the whole spectrum, from "heals itself before you wake up" to "no automation can help":</p>
 <p><strong>UniFi Protect</strong> has a known failure mode where its websocket dies silently: camera entities keep updating, but every motion and smart-detection sensor stops changing state — with zero log errors. The checker detects the freeze (no events for hours <em>of active daytime</em>, so a quiet night never false-positives), reloads the Protect config entry automatically, and then waits for a <em>genuine</em> new event to prove the stream is really back — the reload itself re-registers every sensor with fresh timestamps, which would otherwise look like a recovery. Most freezes heal themselves this way; the page only goes out if the reload didn't work, and the alert keeps firing (annotated "auto-repair FAILED") until events actually resume.</p>
@@ -2108,10 +2109,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
       
     
   </body>
