@@ -427,7 +427,8 @@ aggregate status. The sensors are all in the **Concessions** area, so the card h
 under Server Room. Since 2026-09-30 it sits in the Status section at the top of the tab.
 - **Aggregate**: `sensor.cigar_humidity_summary`, a YAML template in the HA pod's `/config/packages/sensors.yaml` (also a
   badge on Haynes Home and Basement Tablet). It reads `OK`, or `Check: <names>` built from the `out_of_range` attribute of
-  `binary_sensor.cigar_humidity_all_ok` (`/config/packages/binary_sensors.yaml`, band 60–70 % for all nine). The card
+  `binary_sensor.cigar_humidity_all_ok` (`/config/packages/binary_sensors.yaml`, band 60–70 % for eight sensors and
+  60–74 % for Boveda / Sensor05). The card
   spells `OK` as "All OK" with CSS only (`.bubble-state` font-size 0 + `::after` content), so Bubble's own state updates
   never fight it; `Check: …` is shown as-is with an amber icon, and no data (`unavailable`/`unknown`) gets a red icon,
   so a dead template never passes for "All OK". The summary has `availability: has_value(binary_sensor.cigar_humidity_all_ok)`
@@ -448,7 +449,7 @@ under Server Room. Since 2026-09-30 it sits in the Status section at the top of 
   the name chip at `width: 27` and the battery chip at `fill_width: false, width: 21`, with humidity and temperature
   filling the rest. That is the narrowest setting where no chip text scrolls ("Tupperdor 04", "64.8 °F", "100%").
   At 26/18 the names and "100%" start to marquee. The `4i+2` amber map was checked on 2026-09-30 by overriding
-  `per_sensor` in the browser for MON1800 and Cooler: only sub-buttons 2 and 34 (their humidity chips) turned amber. Re-check at 390 px before changing any of them. The ZSE44 battery
+  `per_sensor` in the browser for MON1800 and Boveda: only sub-buttons 2 and 34 (their humidity chips) turned amber. Re-check at 390 px before changing any of them. The ZSE44 battery
   sensors have display precision 0 (entity setting, 2026-09-30), so they read "43%", not "43.0%".
 
   | Name | Humidity | Temperature |
@@ -458,7 +459,7 @@ under Server Room. Since 2026-09-30 it sits in the Status section at the top of 
   | CC Jar | `sensor.cigar_humidity_sensor_04_humidity` | `…_04_air_temperature` |
   | NW Jar | `sensor.cigar_humidity_sensor_03_humidity` | `…_03_air_temperature` |
   | Tupperdor 01–04 | `sensor.cigar_humidity_sensor_{01,02,06,07}_humidity` | `…_air_temperature` |
-  | Cooler | `sensor.cigar_humidity_sensor_05_humidity` | `…_05_air_temperature` |
+  | Boveda | `sensor.cigar_humidity_sensor_05_humidity` | `…_05_air_temperature` |
 
 ### Leak Detection (added 2026-09-30)
 Tom: a Leak Detection card built like the Cigars one. The card shows the aggregate status, and its pop-up lists each

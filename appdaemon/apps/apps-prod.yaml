@@ -989,7 +989,7 @@ cigar_humidity_checker:
       type: humidity
       dependency: zwave
     - entity_id: sensor.cigar_humidity_sensor_05_humidity
-      name: Cooler
+      name: Boveda
       type: humidity
       dependency: zwave
     - entity_id: sensor.cigar_humidity_sensor_06_humidity

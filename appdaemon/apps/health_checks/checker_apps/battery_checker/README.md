@@ -290,7 +290,7 @@ For the UPS, a parsed charge or load threshold failure is physical; unreadable o
 | `sensor.cigar_humidity_sensor_02_battery_level` | Tupperdor 02 |
 | `sensor.cigar_humidity_sensor_03_battery_level` | Jar 01 |
 | `sensor.cigar_humidity_sensor_04_battery_level` | Jar 02 |
-| `sensor.cigar_humidity_sensor_05_battery_level` | Cooler |
+| `sensor.cigar_humidity_sensor_05_battery_level` | Boveda |
 | `sensor.cigar_humidity_sensor_06_battery_level` | Tupperdor 03 |
 | `sensor.cigar_humidity_sensor_07_battery_level` | Tupperdor 04 |
 | `sensor.upstairs_laundry_range_extender_battery_level` | Laundry Range Extender |

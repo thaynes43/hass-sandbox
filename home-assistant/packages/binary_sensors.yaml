@@ -1,0 +1,91 @@
+template:
+  - binary_sensor:
+      - name: "Cigar Humidity All OK"
+        unique_id: "cigar_humidity_all_ok"
+        state: >-
+          {% set sensors = {
+              'sensor.cigar_humidity_sensor_01_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_02_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_03_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_04_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_05_humidity': (60, 74),
+              'sensor.cigar_humidity_sensor_06_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_07_humidity': (60, 70),
+              'sensor.basement_aqara_w100_01_humidity': (60, 70),
+              'sensor.basement_aqara_w100_02_humidity': (60, 70)
+          } %}
+          {% set ns = namespace(ok=true) %}
+          {% for entity, limits in sensors.items() %}
+            {% set s = states(entity) %}
+            {% if s in ['unknown','unavailable'] %}
+              {% set ns.ok = false %}
+            {% else %}
+              {% set v = s|float(none) %}
+              {% if v is none or v < limits[0] or v > limits[1] %}
+                {% set ns.ok = false %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.ok }}
+        icon: >-
+          {% if is_state(this.entity_id, 'on') %}
+            mdi:check-decagram
+          {% else %}
+            mdi:alert-decagram
+          {% endif %}
+        attributes:
+          per_sensor: >-
+            {% set sensors = {
+              'sensor.cigar_humidity_sensor_01_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_02_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_03_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_04_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_05_humidity': (60, 74),
+              'sensor.cigar_humidity_sensor_06_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_07_humidity': (60, 70),
+              'sensor.basement_aqara_w100_01_humidity': (60, 70),
+              'sensor.basement_aqara_w100_02_humidity': (60, 70)
+            } %}
+            {% set ns = namespace(info={}) %}
+            {% for entity, limits in sensors.items() %}
+              {% set s = states(entity) %}
+              {% if s in ['unknown','unavailable'] %}
+                {% set ns.info = ns.info | combine({ entity: {
+                  'state': s, 'in_range': false, 'target': limits
+                }}, recursive=True) %}
+              {% else %}
+                {% set v = s|float(none) %}
+                {% set inr = v is not none and (v >= limits[0] and v <= limits[1]) %}
+                {% set ns.info = ns.info | combine({ entity: {
+                  'state': v, 'in_range': inr, 'target': limits
+                }}, recursive=True) %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.info | tojson }}
+          out_of_range: >-
+            {% set sensors = {
+              'sensor.cigar_humidity_sensor_01_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_02_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_03_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_04_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_05_humidity': (60, 74),
+              'sensor.cigar_humidity_sensor_06_humidity': (60, 70),
+              'sensor.cigar_humidity_sensor_07_humidity': (60, 70),
+              'sensor.basement_aqara_w100_01_humidity': (60, 70),
+              'sensor.basement_aqara_w100_02_humidity': (60, 70)
+            } %}
+            {% set ns = namespace(bad=[]) %}
+            {% for entity, limits in sensors.items() %}
+              {% set s = states(entity) %}
+              {% set raw_name = state_attr(entity, 'friendly_name') or entity %}
+              {% set name = raw_name | replace(' Humidity','') %}
+              {% if s not in ['unknown','unavailable'] %}
+                {% set v = s|float(none) %}
+                {% if v is none or v < limits[0] or v > limits[1] %}
+                  {% set ns.bad = ns.bad + [name] %}
+                {% endif %}
+              {% else %}
+                {% set ns.bad = ns.bad + [name] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.bad }}
