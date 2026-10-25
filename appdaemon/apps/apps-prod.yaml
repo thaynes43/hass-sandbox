@@ -992,6 +992,8 @@ cigar_humidity_checker:
       name: Boveda
       type: humidity
       dependency: zwave
+      humidity_high_warning: 74
+      humidity_high_critical: 76
     - entity_id: sensor.cigar_humidity_sensor_06_humidity
       name: Tupperdor 03
       type: humidity
