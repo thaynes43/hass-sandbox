@@ -5111,11 +5111,11 @@ views:
                 action: more-info
               fill_width: false
               width: 21
-          - name: Cooler
+          - name: Boveda
             buttons_layout: inline
             group:
             - entity: sensor.cigar_humidity_sensor_05_humidity
-              name: Cooler
+              name: Boveda
               icon: mdi:cigar
               show_name: true
               show_icon: false
