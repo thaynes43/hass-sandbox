@@ -208,7 +208,22 @@ ups_checker_dev:
       battery_critical: 50
       load_warning: 90
       load_critical: 100
+
+  alerting:
+    conditions:
+      physical:
+        alertname: UPSUnhealthy
+        labels:
+          scope: host
+      technical:
+        alertname: UPSTelemetryFailure
 ```
+
+## Alert Ownership
+
+The six `BatteryChecker` instances and `UpsChecker` can use the fixed physical/technical Alertmanager conditions without adding a dashboard tile. A parsed battery percentage outside its threshold is physical. Missing, malformed, or non-finite battery telemetry remains `unknown` and does not page, preserving the existing rule that an integration outage is owned by the integration health check.
+
+For the UPS, a parsed charge or load threshold failure is physical; unreadable or non-finite charge/load telemetry is critical and technical. Physical alerts use `scope: host`, which the installed responder skips. Technical alerts have no scope and remain responder eligible. The original `checker_id` continues to select its Alertmanager gate: UPS physical and technical critical failures both use its immediate (`0`) override. See [Alertmanager Bridge](../../README.md#alertmanager-bridge) for the condition schema, independent recovery behavior, and mute semantics.
 
 ## Planned Checker Instances
 

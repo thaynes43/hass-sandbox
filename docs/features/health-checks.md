@@ -152,6 +152,8 @@ The dashboard is great when someone is looking at it. For failures that need att
 
 Each alert carries the failing check details in its description, so the notification usually tells the whole story on its own ("Event stream frozen for 3.2h — no genuine event since detection"). While an alert is firing, the controller re-posts it every two minutes to keep it alive (Alertmanager expires silent alerts after five), and if Alertmanager itself is down, health checking carries on unaffected — posts are simply retried until it returns.
 
+The Cigars, battery, and UPS tiles remain single tiles that show every check. Their alerts distinguish an owner-action value such as low humidity, a low battery, or UPS charge/load outside its threshold from broken sensor telemetry. Owner-action alerts are marked for the host and skipped by the automated responder. Telemetry alerts remain eligible for the responder, so a failed sensor is not hidden behind an owner-action skip. The two alert conditions can fire and recover independently while the tile continues to show their combined health. Missing or malformed ordinary battery readings still show as `unknown` and do not page; UPS telemetry failures remain critical.
+
 Checkers can customize their alert name in config (e.g. `ProtectEventStreamFrozen`, `ImageGenQueueStuck`) or opt out of alerting entirely.
 
 ### Smarter Than a Tripwire
@@ -182,7 +184,7 @@ The controller now posts to the **headless** Service and fans each batch out to 
 
 ### Muting a Checker
 
-Sometimes you already know about a problem and don't want to be paged about it — a camera is unplugged for the season, or you're mid-maintenance on the spa. Every checker in the detail popup has an **Alerting** row with **Mute 1d**, **Mute 7d**, and indefinite **Mute** buttons (and **Unmute** to lift it). A muted checker keeps running and still shows its true status on the dashboard — with a **MUTED** badge in its header — but it won't page while muted. Timed mutes lift themselves automatically when they expire, and a mute survives an AppDaemon restart, so a 7-day mute really lasts 7 days.
+Sometimes you already know about a problem and don't want to be paged about it — a camera is unplugged for the season, or you're mid-maintenance on the spa. Every checker in the detail popup has an **Alerting** row with **Mute 1d**, **Mute 7d**, and indefinite **Mute** buttons (and **Unmute** to lift it). A muted checker keeps running and still shows its true status on the dashboard — with a **MUTED** badge in its header — but it won't page while muted. A mute resolves all of that checker's alert conditions immediately, including an alert awaiting its normal recovery hold. Timed mutes lift themselves automatically when they expire, and a mute survives an AppDaemon restart, so a 7-day mute really lasts 7 days.
 
 ### Auto-Heal First, Page If That Fails
 

@@ -2,7 +2,10 @@
 
 Pure decision logic, no HTTP: the controller injects a
 :class:`providers.alertmanager.AlertmanagerClient` and this module decides
-when to raise, refresh, and resolve one alert per unhealthy checker.
+when to raise, refresh, and resolve one alert per unhealthy checker stream.
+Legacy checkers use one stream. A checker that declares the fixed physical and
+technical conditions has one independent stream for each condition while
+retaining its original checker ID for Alertmanager labels and gates.
 
 Behaviour:
 
@@ -84,6 +87,22 @@ registration payload::
       alertname: ProtectEventStreamFrozen # default <CheckerName>Unhealthy
       ignore_for_overrides: false         # true = default for-gate only
 
+The optional condition contract is deliberately small and fixed::
+
+    alerting:
+      conditions:
+        physical:
+          alertname: CigarsUnhealthy
+          labels:
+            scope: host
+        technical:
+          alertname: CigarsTelemetryFailure
+
+Only ``physical`` and ``technical`` are accepted.  Valid physical labels may
+mark an owner-action alert ``scope=host``; technical alerts stay eligible for
+the responder.  Invalid condition configuration falls back to the ordinary
+responder-eligible checker alert rather than dropping a failure.
+
 ``ignore_for_overrides`` is set by the controller's registration watchdog on
 its synthetic "not registered" checker: per-checker ``for_overrides`` were
 chosen for what a running checker reports (``ups: critical: 0``), not for
@@ -95,7 +114,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import re
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 SEVERITY_BY_STATUS = {
     "critical": "critical",
@@ -121,6 +140,15 @@ _REPAIR_HOLD_STATES = ("pending", "in_progress", "success")
 SOURCE_LABEL = "appdaemon-health-check"
 
 _MAX_DESCRIPTION_LEN = 600
+
+# A legacy checker alert keeps its existing string key.  Split physical and
+# technical conditions use a tuple, which cannot collide with an ordinary
+# checker_id (checker IDs are strings throughout the controller protocol).
+AlertKey = Union[str, Tuple[str, str]]
+
+_CONDITION_NAMES = ("physical", "technical")
+_RESERVED_LABELS = {"alertname", "severity", "source", "checker"}
+_LABEL_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def default_alertname(checker_name: str, checker_id: str) -> str:
@@ -150,12 +178,15 @@ class AlertmanagerBridge:
     ) -> None:
         self._client = client
         self._log = log_fn or (lambda msg, level="INFO": None)
-        # checker_id → firing alert dict ({"labels", "annotations", "startsAt"})
-        self._active: Dict[str, Dict[str, Any]] = {}
-        # checker_id → {"desired": alert dict, "since": aware datetime}.
+        # AlertKey → firing alert dict ({"labels", "annotations", "startsAt"}).
+        # Legacy checkers retain their checker_id string key; condition-aware
+        # checkers use (checker_id, condition), so the two streams are fully
+        # independent without changing the controller's public checker IDs.
+        self._active: Dict[AlertKey, Dict[str, Any]] = {}
+        # AlertKey → {"desired": alert dict, "since": aware datetime}.
         # Alerts withheld by the for-duration gate until they have been
         # unhealthy long enough to promote into _active.
-        self._pending: Dict[str, Dict[str, Any]] = {}
+        self._pending: Dict[AlertKey, Dict[str, Any]] = {}
         # for-duration config: global default by severity + per-checker
         # overrides by checker_id then severity.  Empty → for=0 everywhere
         # (raise immediately, preserving the pre-gate behaviour).
@@ -175,10 +206,14 @@ class AlertmanagerBridge:
             self._improve_hold_s: int = max(0, int(improve_hold_s))
         except (TypeError, ValueError):
             self._improve_hold_s = 0
-        # checker_id → {"since": aware datetime} while an active alert's
+        # AlertKey → {"since": aware datetime} while an active alert's
         # checker is continuously reporting *better* than the firing
         # severity (improvement hold in progress).
-        self._improving: Dict[str, Dict[str, Any]] = {}
+        self._improving: Dict[AlertKey, Dict[str, Any]] = {}
+        # Avoid writing the same malformed-condition/category warning on every
+        # report. A later valid registration naturally stops using the entry.
+        self._invalid_conditions_logged: set[str] = set()
+        self._invalid_categories_logged: set[Tuple[str, str]] = set()
         # Injectable clock so tests can drive the for-duration gate.
         self._now_fn: Callable[[], datetime.datetime] = now_fn or (
             lambda: datetime.datetime.now(datetime.timezone.utc)
@@ -213,13 +248,13 @@ class AlertmanagerBridge:
     # ------------------------------------------------------------------
 
     @property
-    def active_alerts(self) -> Dict[str, Dict[str, Any]]:
-        """Currently-firing alerts keyed by checker_id (for tests/inspection)."""
+    def active_alerts(self) -> Dict[AlertKey, Dict[str, Any]]:
+        """Currently-firing alerts keyed by checker ID or condition stream."""
         return self._active
 
     @property
-    def pending_alerts(self) -> Dict[str, Dict[str, Any]]:
-        """Alerts held by the for-duration gate, keyed by checker_id."""
+    def pending_alerts(self) -> Dict[AlertKey, Dict[str, Any]]:
+        """Alerts held by the for-duration gate, keyed by alert stream."""
         return self._pending
 
     async def sync(self, snapshot: Dict[str, Dict[str, Any]]) -> None:
@@ -238,38 +273,83 @@ class AlertmanagerBridge:
         to_post: List[Dict[str, Any]] = []
         now = self._now_fn()
 
+        # A normal checker has one stream keyed by its string checker_id. The
+        # scoped checkers below may expose two streams keyed by a tuple. Build
+        # every stream first so a removed condition can be resolved while its
+        # checker still exists in the snapshot (a missing *checker* remains
+        # intentionally visible via the re-post loop).
+        desired_streams: Dict[AlertKey, Tuple[str, Dict[str, Any]]] = {}
         for checker_id, checker in snapshot.items():
+            for stream_key, stream_checker in self._condition_streams(
+                checker_id, checker
+            ):
+                desired_streams[stream_key] = (checker_id, stream_checker)
+
+        for checker_id in snapshot:
+            live_keys = {
+                key
+                for key, (owner_id, _checker) in desired_streams.items()
+                if owner_id == checker_id
+            }
+            stale_keys = {
+                key
+                for key in (
+                    set(self._active) | set(self._pending) | set(self._improving)
+                )
+                if self._key_belongs_to_checker(key, checker_id) and key not in live_keys
+            }
+            for stream_key in stale_keys:
+                self._pending.pop(stream_key, None)
+                self._improving.pop(stream_key, None)
+                active = self._active.pop(stream_key, None)
+                if active is not None:
+                    to_post.append(self._resolved_copy(active))
+                    self._log(
+                        f"Alert resolved for checker '{self._stream_name(stream_key)}' "
+                        f"({active['labels'].get('alertname')}) — alert condition removed",
+                        level="INFO",
+                    )
+
+        for stream_key, (checker_id, checker) in desired_streams.items():
+            display_name = self._stream_name(stream_key)
             desired = self._build_desired(checker_id, checker)
-            active = self._active.get(checker_id)
-            pending = self._pending.get(checker_id)
+            active = self._active.get(stream_key)
+            pending = self._pending.get(stream_key)
 
             if desired is None:
                 # Recovered / ok / alerting disabled.
+                # A tile mute is an explicit operator command. It must end
+                # every condition now, rather than leaving a host-scoped or
+                # technical alert firing through the normal recovery hold.
+                alerting_disabled = not (checker.get("alerting") or {}).get(
+                    "enabled", True
+                )
                 if pending is not None:
                     elapsed = (now - pending["since"]).total_seconds()
-                    del self._pending[checker_id]
+                    del self._pending[stream_key]
                     self._log(
-                        f"Alert suppressed for checker '{checker_id}' — recovered "
+                        f"Alert suppressed for checker '{display_name}' — recovered "
                         f"after {elapsed:.0f}s pending (never reached for-threshold)",
                         level="INFO",
                     )
                 if active is not None:
-                    if self._improve_holding(
-                        checker_id,
+                    if not alerting_disabled and self._improve_holding(
+                        stream_key,
                         now,
                         f"resolve of severity="
                         f"{active['labels'].get('severity')} (checker recovered)",
                     ):
                         continue
+                    self._improving.pop(stream_key, None)
                     to_post.append(self._resolved_copy(active))
-                    del self._active[checker_id]
+                    del self._active[stream_key]
                     self._log(
-                        f"Alert resolved for checker '{checker_id}' "
+                        f"Alert resolved for checker '{display_name}' "
                         f"({active['labels'].get('alertname')})",
                         level="INFO",
                     )
                 else:
-                    self._improving.pop(checker_id, None)
+                    self._improving.pop(stream_key, None)
                 continue
 
             # desired is non-None — the checker is unhealthy.
@@ -289,17 +369,17 @@ class AlertmanagerBridge:
                     # escalation is dropped: the checker fell back to the
                     # severity that is already firing before promotion.
                     active["annotations"] = desired["annotations"]
-                    if self._improving.pop(checker_id, None) is not None:
+                    if self._improving.pop(stream_key, None) is not None:
                         self._log(
-                            f"Improvement discarded for checker '{checker_id}' "
+                            f"Improvement discarded for checker '{display_name}' "
                             f"— back at severity={severity} inside the hold "
                             f"window",
                             level="INFO",
                         )
                     if pending is not None:
-                        del self._pending[checker_id]
+                        del self._pending[stream_key]
                         self._log(
-                            f"Escalation dropped for checker '{checker_id}' — "
+                            f"Escalation dropped for checker '{display_name}' — "
                             f"returned to severity={severity} before promotion",
                             level="INFO",
                         )
@@ -309,9 +389,9 @@ class AlertmanagerBridge:
                     active["labels"].get("severity", ""), 0
                 )
                 if escalating:
-                    if self._improving.pop(checker_id, None) is not None:
+                    if self._improving.pop(stream_key, None) is not None:
                         self._log(
-                            f"Improvement discarded for checker '{checker_id}' "
+                            f"Improvement discarded for checker '{display_name}' "
                             f"— escalating to severity={severity} inside the "
                             f"hold window",
                             level="INFO",
@@ -323,9 +403,9 @@ class AlertmanagerBridge:
                     # the current failing checks throughout the gate window.
                     active["annotations"] = desired["annotations"]
                     if pending is None:
-                        self._pending[checker_id] = {"desired": desired, "since": now}
+                        self._pending[stream_key] = {"desired": desired, "since": now}
                         self._log(
-                            f"Escalation pending for checker '{checker_id}': "
+                            f"Escalation pending for checker '{display_name}': "
                             f"severity={severity} — withholding until sustained "
                             f"for {for_s}s",
                             level="INFO",
@@ -333,13 +413,13 @@ class AlertmanagerBridge:
                         continue
                     pending["desired"] = desired
                     if not self._promotion_due(
-                        checker_id, checker, pending, severity, for_s, now
+                        display_name, checker, pending, severity, for_s, now
                     ):
                         continue
                     elapsed = (now - pending["since"]).total_seconds()
-                    del self._pending[checker_id]
+                    del self._pending[stream_key]
                     self._log(
-                        f"Escalation promoted for checker '{checker_id}' after "
+                        f"Escalation promoted for checker '{display_name}' after "
                         f"{elapsed:.0f}s sustained (for={for_s}s): "
                         f"severity={severity}",
                         level="INFO",
@@ -347,26 +427,26 @@ class AlertmanagerBridge:
                 elif pending is not None:
                     # De-escalation (or identity change with for=0) — clear
                     # whatever escalation was pending.
-                    del self._pending[checker_id]
+                    del self._pending[stream_key]
 
                 if not escalating and self._improve_holding(
-                    checker_id, now, f"de-escalation to severity={severity}"
+                    stream_key, now, f"de-escalation to severity={severity}"
                 ):
                     # Keep the higher-severity alert firing through the hold
                     # window, with fresh annotations so the UI shows what is
                     # failing right now.
                     active["annotations"] = desired["annotations"]
                     continue
-                self._improving.pop(checker_id, None)
+                self._improving.pop(stream_key, None)
 
                 # Labels define alert identity — resolve the old one and
                 # raise the new one.
                 to_post.append(self._resolved_copy(active))
                 desired["startsAt"] = _utcnow_iso()
-                self._active[checker_id] = desired
+                self._active[stream_key] = desired
                 to_post.append(dict(desired))
                 self._log(
-                    f"Alert re-raised for checker '{checker_id}' with new "
+                    f"Alert re-raised for checker '{display_name}' with new "
                     f"labels: severity={desired['labels'].get('severity')}",
                     level="INFO",
                 )
@@ -376,18 +456,18 @@ class AlertmanagerBridge:
             if pending is None:
                 if for_s <= 0:
                     desired["startsAt"] = _utcnow_iso()
-                    self._active[checker_id] = desired
+                    self._active[stream_key] = desired
                     to_post.append(dict(desired))
                     self._log(
-                        f"Alert raised for checker '{checker_id}': "
+                        f"Alert raised for checker '{display_name}': "
                         f"{desired['labels'].get('alertname')} "
                         f"severity={severity}",
                         level="INFO",
                     )
                 else:
-                    self._pending[checker_id] = {"desired": desired, "since": now}
+                    self._pending[stream_key] = {"desired": desired, "since": now}
                     self._log(
-                        f"Alert pending for checker '{checker_id}': "
+                        f"Alert pending for checker '{display_name}': "
                         f"{desired['labels'].get('alertname')} severity={severity} "
                         f"— withholding until unhealthy for {for_s}s",
                         level="INFO",
@@ -398,14 +478,16 @@ class AlertmanagerBridge:
             # and promote once it has been unhealthy for >= for_s (and any
             # active auto-repair has had its chance).
             pending["desired"] = desired
-            if self._promotion_due(checker_id, checker, pending, severity, for_s, now):
+            if self._promotion_due(
+                display_name, checker, pending, severity, for_s, now
+            ):
                 elapsed = (now - pending["since"]).total_seconds()
                 desired["startsAt"] = _utcnow_iso()
-                self._active[checker_id] = desired
-                del self._pending[checker_id]
+                self._active[stream_key] = desired
+                del self._pending[stream_key]
                 to_post.append(dict(desired))
                 self._log(
-                    f"Alert promoted for checker '{checker_id}' after "
+                    f"Alert promoted for checker '{display_name}' after "
                     f"{elapsed:.0f}s unhealthy (for={for_s}s): severity={severity}",
                     level="INFO",
                 )
@@ -419,7 +501,7 @@ class AlertmanagerBridge:
         await self._post(to_post)
 
     async def forget(self, checker_id: str, reason: str = "checker removed") -> None:
-        """Resolve a checker's alert now and drop all state kept for it.
+        """Resolve a checker's alerts now and drop all state kept for it.
 
         For a checker that has left the controller for good (e.g. a missing
         checker whose app was disabled).  ``sync`` deliberately keeps a
@@ -427,17 +509,27 @@ class AlertmanagerBridge:
         flapping checkers, not departed ones, so neither applies here.
         """
         async with self._post_lock:
-            self._pending.pop(checker_id, None)
-            self._improving.pop(checker_id, None)
-            active = self._active.pop(checker_id, None)
-            if active is None:
-                return
-            self._log(
-                f"Alert resolved for checker '{checker_id}' "
-                f"({active['labels'].get('alertname')}) — {reason}",
-                level="INFO",
-            )
-            await self._post([self._resolved_copy(active)])
+            keys = {
+                key
+                for key in (
+                    set(self._active) | set(self._pending) | set(self._improving)
+                )
+                if self._key_belongs_to_checker(key, checker_id)
+            }
+            resolved = []
+            for key in keys:
+                self._pending.pop(key, None)
+                self._improving.pop(key, None)
+                active = self._active.pop(key, None)
+                if active is None:
+                    continue
+                self._log(
+                    f"Alert resolved for checker '{self._stream_name(key)}' "
+                    f"({active['labels'].get('alertname')}) — {reason}",
+                    level="INFO",
+                )
+                resolved.append(self._resolved_copy(active))
+            await self._post(resolved)
 
     async def repost_active(self) -> None:
         """Re-post all firing alerts so they outlive resolve_timeout."""
@@ -451,8 +543,171 @@ class AlertmanagerBridge:
     # Internals
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _key_belongs_to_checker(key: AlertKey, checker_id: str) -> bool:
+        """Whether an alert state key belongs to *checker_id*."""
+        return key == checker_id or (
+            isinstance(key, tuple) and len(key) == 2 and key[0] == checker_id
+        )
+
+    @staticmethod
+    def _stream_name(key: AlertKey) -> str:
+        """Human-readable stream name for bridge logs."""
+        if isinstance(key, tuple):
+            return f"{key[0]} ({key[1]})"
+        return key
+
+    def _condition_streams(
+        self, checker_id: str, checker: Dict[str, Any]
+    ) -> List[Tuple[AlertKey, Dict[str, Any]]]:
+        """Return legacy or physical/technical Alertmanager streams.
+
+        ``alerting.conditions`` deliberately supports only the two named
+        conditions this health domain needs.  A complete configuration has a
+        physical condition with the installed responder-skip label
+        ``scope=host`` and a responder-eligible technical condition.  Any
+        malformed/incomplete configuration falls back to the legacy aggregate
+        stream without a host scope, so a bad config can never discard a
+        failure or suppress a technical alert.
+        """
+        alerting = checker.get("alerting") or {}
+        conditions = alerting.get("conditions") if isinstance(alerting, dict) else None
+        if conditions is None:
+            return [(checker_id, checker)]
+
+        parsed = self._parse_conditions(checker_id, conditions)
+        if parsed is None:
+            return [(checker_id, checker)]
+
+        categorized: Dict[str, List[Dict[str, Any]]] = {
+            condition: [] for condition in _CONDITION_NAMES
+        }
+        for check in checker.get("checks", []):
+            status = check.get("status", "unknown")
+            if status in ("ok", "unknown"):
+                continue
+            category = check.get("alert_category")
+            if category not in _CONDITION_NAMES:
+                # A malformed marker must not make a failing result disappear.
+                # Technical is deliberately responder-eligible and has no
+                # host-scope label, making it the safe fail-open destination.
+                category = "technical"
+                invalid_key = (checker_id, str(check.get("name", "?")))
+                if invalid_key not in self._invalid_categories_logged:
+                    self._invalid_categories_logged.add(invalid_key)
+                    self._log(
+                        f"Alert condition metadata invalid for checker "
+                        f"'{checker_id}', check '{check.get('name', '?')}' — "
+                        "routing it to responder-eligible technical alert",
+                        level="WARNING",
+                    )
+            categorized[category].append(dict(check))
+
+        streams: List[Tuple[AlertKey, Dict[str, Any]]] = []
+        for condition in _CONDITION_NAMES:
+            condition_checks = categorized[condition]
+            stream_alerting = {
+                **alerting,
+                "alertname": parsed[condition]["alertname"],
+                "labels": dict(parsed[condition]["labels"]),
+            }
+            stream_checker = {
+                **checker,
+                "status": self._worst_status(condition_checks),
+                "checks": condition_checks,
+                "alerting": stream_alerting,
+                # Validated condition labels never come from a legacy
+                # checker-level field, so an invalid config cannot carry a
+                # host-scope label into its responder-eligible fallback.
+                "_alert_labels": dict(parsed[condition]["labels"]),
+            }
+            streams.append(((checker_id, condition), stream_checker))
+        return streams
+
+    def _parse_conditions(
+        self, checker_id: str, conditions: Any
+    ) -> Optional[Dict[str, Dict[str, Any]]]:
+        """Validate and sanitize the fixed physical/technical contract.
+
+        Invalid user configuration fails open to the legacy stream.  This is
+        intentionally stricter than a generic arbitrary-label mechanism:
+        Alertmanager's identity labels must remain bridge-owned, and the only
+        responder-skip label allowed here is the physical condition's fixed
+        ``scope=host``.
+        """
+        if not isinstance(conditions, dict) or set(conditions) != set(_CONDITION_NAMES):
+            self._log_invalid_conditions(checker_id, "must define exactly physical and technical")
+            return None
+
+        parsed: Dict[str, Dict[str, Any]] = {}
+        for condition in _CONDITION_NAMES:
+            raw = conditions.get(condition)
+            if not isinstance(raw, dict):
+                self._log_invalid_conditions(checker_id, f"{condition} must be a mapping")
+                return None
+            alertname = raw.get("alertname")
+            if not isinstance(alertname, str) or not alertname.strip():
+                self._log_invalid_conditions(checker_id, f"{condition}.alertname is required")
+                return None
+            raw_labels = raw.get("labels", {})
+            if not isinstance(raw_labels, dict):
+                self._log_invalid_conditions(checker_id, f"{condition}.labels must be a mapping")
+                return None
+
+            labels: Dict[str, str] = {}
+            for label, value in raw_labels.items():
+                if (
+                    not isinstance(label, str)
+                    or not _LABEL_NAME_RE.fullmatch(label)
+                    or label in _RESERVED_LABELS
+                    or not isinstance(value, (str, int, float, bool))
+                ):
+                    self._log_invalid_conditions(
+                        checker_id, f"{condition}.labels contains an invalid or reserved label"
+                    )
+                    return None
+                labels[label] = str(value)
+
+            if condition == "physical":
+                if labels.get("scope") != "host":
+                    self._log_invalid_conditions(
+                        checker_id, "physical.labels.scope must be host"
+                    )
+                    return None
+            elif "scope" in labels:
+                self._log_invalid_conditions(
+                    checker_id, "technical.labels may not set scope"
+                )
+                return None
+            parsed[condition] = {"alertname": alertname.strip(), "labels": labels}
+        self._invalid_conditions_logged.discard(checker_id)
+        return parsed
+
+    def _log_invalid_conditions(self, checker_id: str, reason: str) -> None:
+        """Warn once that a condition config is using legacy fail-open mode."""
+        if checker_id in self._invalid_conditions_logged:
+            return
+        self._invalid_conditions_logged.add(checker_id)
+        self._log(
+            f"Invalid alert conditions for checker '{checker_id}' ({reason}) — "
+            "using responder-eligible aggregate alert",
+            level="WARNING",
+        )
+
+    @staticmethod
+    def _worst_status(checks: List[Dict[str, Any]]) -> str:
+        """Return the legacy aggregate status for one condition's checks."""
+        statuses = {check.get("status", "unknown") for check in checks}
+        if "critical" in statuses:
+            return "critical"
+        if "degraded" in statuses:
+            return "degraded"
+        if "warning" in statuses:
+            return "warning"
+        return "ok"
+
     def _improve_holding(
-        self, checker_id: str, now: datetime.datetime, what: str
+        self, stream_key: AlertKey, now: datetime.datetime, what: str
     ) -> bool:
         """Track an improvement of a firing alert; True while it is held.
 
@@ -465,11 +720,11 @@ class AlertmanagerBridge:
         """
         if self._improve_hold_s <= 0:
             return False
-        imp = self._improving.get(checker_id)
+        imp = self._improving.get(stream_key)
         if imp is None:
-            self._improving[checker_id] = {"since": now}
+            self._improving[stream_key] = {"since": now}
             self._log(
-                f"Improvement hold for checker '{checker_id}' — {what} "
+                f"Improvement hold for checker '{self._stream_name(stream_key)}' — {what} "
                 f"withheld until sustained for {self._improve_hold_s}s",
                 level="INFO",
             )
@@ -477,9 +732,9 @@ class AlertmanagerBridge:
         elapsed = (now - imp["since"]).total_seconds()
         if elapsed < self._improve_hold_s:
             return True
-        del self._improving[checker_id]
+        del self._improving[stream_key]
         self._log(
-            f"Improvement sustained for checker '{checker_id}' "
+            f"Improvement sustained for checker '{self._stream_name(stream_key)}' "
             f"({elapsed:.0f}s ≥ {self._improve_hold_s}s) — applying {what}",
             level="INFO",
         )
@@ -487,7 +742,7 @@ class AlertmanagerBridge:
 
     def _promotion_due(
         self,
-        checker_id: str,
+        display_name: str,
         checker: Dict[str, Any],
         pending: Dict[str, Any],
         severity: str,
@@ -516,7 +771,7 @@ class AlertmanagerBridge:
                 if not pending.get("repair_hold_logged"):
                     pending["repair_hold_logged"] = True
                     self._log(
-                        f"Repair hold for checker '{checker_id}' — critical "
+                        f"Repair hold for checker '{display_name}' — critical "
                         f"promotion withheld while auto-repair is "
                         f"{repair_status} (cap {self._repair_hold_cap_s}s)",
                         level="INFO",
@@ -565,13 +820,26 @@ class AlertmanagerBridge:
         if len(description) > _MAX_DESCRIPTION_LEN:
             description = description[: _MAX_DESCRIPTION_LEN - 1] + "…"
 
+        labels = {
+            "alertname": alertname,
+            "severity": severity,
+            "source": SOURCE_LABEL,
+            "checker": checker_id,
+        }
+        # Condition configs are validated before they reach this point. Keep
+        # this second guard so a hand-built snapshot cannot override the
+        # bridge-owned Alertmanager identity labels.
+        for label, value in (checker.get("_alert_labels") or {}).items():
+            if (
+                isinstance(label, str)
+                and _LABEL_NAME_RE.fullmatch(label)
+                and label not in _RESERVED_LABELS
+                and isinstance(value, str)
+            ):
+                labels[label] = value
+
         return {
-            "labels": {
-                "alertname": alertname,
-                "severity": severity,
-                "source": SOURCE_LABEL,
-                "checker": checker_id,
-            },
+            "labels": labels,
             "annotations": {
                 "summary": f"{name} health check is {status}",
                 "description": description,

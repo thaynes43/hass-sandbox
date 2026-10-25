@@ -184,6 +184,25 @@ class TestRegistration:
         assert payload["checker_id"] == "ups"
         assert payload["checker_name"] == "UPS"
 
+    def test_forwards_alert_condition_config(self):
+        alerting = {
+            "conditions": {
+                "physical": {
+                    "alertname": "UPSUnhealthy",
+                    "labels": {"scope": "host"},
+                },
+                "technical": {"alertname": "UPSTelemetryFailure"},
+            }
+        }
+        app = _make_app({"alerting": alerting})
+        _startup(app)
+        register_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "register_checker"
+        ]
+        payload = json.loads(register_calls[0][1]["payload"])
+        assert payload["alerting"] == alerting
+
 
 # ------------------------------------------------------------------
 # Battery check (low = bad)
@@ -400,6 +419,51 @@ class TestRunChecks:
             if c[1].get("level") == "WARNING"
         ]
         assert len(warning_calls) >= 1
+
+    def test_marks_numeric_and_unreadable_results_by_alert_category(self):
+        app = _make_app()
+        _init_only(app)
+        # A low charge is an owner-action value; an unavailable load is a
+        # telemetry problem. They retain one aggregate checker report.
+        app.get_state = MagicMock(side_effect=["40", "unavailable"])
+        app._run_checks()
+
+        report = next(
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        )
+        payload = json.loads(report[1]["payload"])
+        assert [result["alert_category"] for result in payload["results"]] == [
+            "physical", "technical",
+        ]
+        assert payload["results"][0]["status"] == "critical"
+        assert payload["results"][1]["status"] == "critical"
+        assert payload["metrics"] == [
+            {
+                "name": "battery_percent",
+                "value": 40.0,
+                "type": "gauge",
+                "labels": {"device": "UPS A"},
+            }
+        ]
+
+    def test_nonfinite_readings_are_technical_without_metrics(self):
+        app = _make_app()
+        _init_only(app)
+        app.get_state = MagicMock(side_effect=["NaN", "inf"])
+        app._run_checks()
+
+        report = next(
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        )
+        payload = json.loads(report[1]["payload"])
+        assert all(result["status"] == "critical" for result in payload["results"])
+        assert all(
+            result["alert_category"] == "technical"
+            for result in payload["results"]
+        )
+        assert "metrics" not in payload
 
 
 # ------------------------------------------------------------------

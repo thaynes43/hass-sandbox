@@ -9,6 +9,7 @@ Communication with the controller is event-only (never ``get_app``).
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -34,6 +35,7 @@ class UpsChecker(hass.Hass):
         # Identity
         self._checker_id: str = args.get("checker_id", "ups")
         self._checker_name: str = args.get("checker_name", "UPS")
+        self._alerting: Dict[str, Any] = dict(args.get("alerting") or {})
 
         # Timing
         self._check_interval_s: int = int(args.get("check_interval_s", 120))
@@ -106,14 +108,18 @@ class UpsChecker(hass.Hass):
             check_names.append(f"{dev['name']} Battery")
             check_names.append(f"{dev['name']} Load")
 
+        payload: Dict[str, Any] = {
+            "checker_id": self._checker_id,
+            "checker_name": self._checker_name,
+            "check_names": check_names,
+        }
+        if self._alerting:
+            payload["alerting"] = self._alerting
+
         self.fire_event(
             "health_check_command",
             command="register_checker",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "checker_name": self._checker_name,
-                "check_names": check_names,
-            }),
+            payload=json.dumps(payload),
         )
         self.log(
             f"Registered '{self._checker_name}' with checks: {check_names}",
@@ -162,6 +168,9 @@ class UpsChecker(hass.Hass):
                 "name": f"{device['name']} Battery",
                 "status": batt_status,
                 "detail": batt_detail,
+                "alert_category": "physical"
+                if self._last_metric_value.get(device["battery_entity"]) is not None
+                else "technical",
             })
             batt_value = self._last_metric_value.get(device["battery_entity"])
             if batt_value is not None:
@@ -177,6 +186,9 @@ class UpsChecker(hass.Hass):
                 "name": f"{device['name']} Load",
                 "status": load_status,
                 "detail": load_detail,
+                "alert_category": "physical"
+                if self._last_metric_value.get(device["load_entity"]) is not None
+                else "technical",
             })
             load_value = self._last_metric_value.get(device["load_entity"])
             if load_value is not None:
@@ -227,6 +239,8 @@ class UpsChecker(hass.Hass):
             value = float(state)
         except (ValueError, TypeError):
             return ("critical", f"non-numeric state: {state}")
+        if not math.isfinite(value):
+            return ("critical", f"non-finite state: {state}")
 
         self._last_metric_value[entity_id] = value
 
@@ -258,6 +272,8 @@ class UpsChecker(hass.Hass):
             value = float(state)
         except (ValueError, TypeError):
             return ("critical", f"non-numeric state: {state}")
+        if not math.isfinite(value):
+            return ("critical", f"non-finite state: {state}")
 
         self._last_metric_value[entity_id] = value
 
