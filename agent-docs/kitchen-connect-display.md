@@ -43,8 +43,13 @@ off the screen:
   v3 takes the clock format from the HA profile, so the 12-hour clock read "11:55 AM" at 4rem, did not
   fit and showed "11:55 …". Tom chose `h:mm` with no AM/PM (2026-10-27).
 
-v3 silently ignores the v2 options it removed. After any later major update of the card, check this
-card against its release notes.
+The **Wall Display** dashboard (`wall-display`, Home view) has the same card at the same path with the
+same two settings, plus `sections.forecast_list.count: 3`: its v2 config had `forecast_rows: 3`, which
+v3 ignores, so the list grew to 5 days (Tom 2026-10-27). Its `card_mod` padding block is from v2 and was
+kept. Repo copy: `home-assistant/dashboards/wall-display.yaml`.
+
+v3 silently ignores the v2 options it removed. After any later major update of the card, check both
+cards against its release notes.
 
 ## The kitchen timers
 
