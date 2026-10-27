@@ -87,7 +87,7 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 
 ### Fan Health Checker
 
-`FanHealthChecker` monitors all Modern Forms ceiling fans as a single checker (2 checks per fan). Supports per-fan repair via `script.zen32_hard_reset`; a fan with no ZEN32 (the outdoor Pavilion fan) is monitor-only. See `fan_health_checker/README.md` for details.
+`FanHealthChecker` monitors all Modern Forms ceiling fans as a single checker (2 checks per fan). Supports per-fan repair via `script.zen32_hard_reset`; a fan with no ZEN32 (the outdoor Pavilion fan) is monitor-only. The Pavilion fan is powered off over the winter and commented out of `apps-prod.yaml` (since 2026-10-27). See `fan_health_checker/README.md` for details.
 
 ### Basic Device Checker
 

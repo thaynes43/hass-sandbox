@@ -24,6 +24,14 @@ The Pavilion fan's State and Ping rows still go into the same result list, so a
 Pavilion blip keeps the `fans` checker non-ok (and the alert clock running) like
 any other fan's.
 
+**Off-season (Tom, 2026-10-27): the Pavilion fan is powered off for the winter**
+and its entry is commented out of `apps-prod.yaml`, so the live checker watches
+the six ZEN32 fans only. Until spring, `fan.pavilion_fan_fan` and
+`light.pavilion_fan_light` read `unavailable` by design: that is not an incident,
+and there is nothing to reconnect. Where this runbook counts seven fans, read six.
+In spring, uncomment the entry (its comment says how) and ship it as an AppDaemon
+release.
+
 ## Domain fact (read this first)
 
 **These fans are Wi-Fi devices, not Z-Wave.** Modern Forms fans are Espressif
@@ -63,7 +71,7 @@ Three consequences that shape everything below:
 | Primary Bedroom | `fan.primary_bedroom_fan_fan` | 192.168.50.146 | Primary Closet U7 Pro |
 | Living Room | `fan.livingroom_fan_fan` | 192.168.50.148 | Livingroom U7-Pro-Wall |
 | Study | `fan.study_fan_fan` | 192.168.50.179 | Kitchen Pantry U7 Pro |
-| Pavilion (**monitor-only**, no ZEN32) | `fan.pavilion_fan_fan` | 192.168.50.184 | Pavilion U7 Pro Outdoor |
+| Pavilion (**monitor-only**, no ZEN32; **out for the off-season since 2026-10-27**) | `fan.pavilion_fan_fan` | 192.168.50.184 | Pavilion U7 Pro Outdoor |
 
 Pink Room is **locked** to Kitchen Pantry in UniFi (client "Lock to AP"); the others roam.
 Fans roam between APs; the **Access point** column above is the AP each fan usually holds

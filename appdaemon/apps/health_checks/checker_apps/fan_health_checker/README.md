@@ -21,6 +21,8 @@ Supports per-fan repair via a configurable HA script (default: `script.zen32_har
 
 A fan entry without `power_switch`, `relay_control` and `scene_control` is
 **monitor-only**. The Pavilion fan is one: it is outdoors and has no ZEN32.
+It is powered off over the winter, so its `apps-prod.yaml` entry is commented
+out for the off-season (since 2026-10-27) and goes back in spring.
 It gets both checks and the same access-point-aware alert text, but it is never
 repair-worthy. Auto-repair, the Repair button and the backoff ladder never touch
 it. It is also left out of the systemic-outage count below: that signature means
