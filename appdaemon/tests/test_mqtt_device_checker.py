@@ -275,6 +275,78 @@ class TestMqttRecencyCheck:
         assert status == "critical"
         assert "stale" in detail
 
+    def test_renamed_entity_matches_by_object_id(self):
+        # The mudroom lights (2026-10-27): HA name "Hue Recessed 01",
+        # Z2M still publishes under the object_id.
+        app = _make_app()
+        _startup(app)
+        now = time.time()
+        app._mqtt_last_seen["downstairs_mudroom_hue_recessed_01"] = now - 60
+        status, _ = app._check_mqtt_recency(
+            "Hue Recessed 01", now, "light.downstairs_mudroom_hue_recessed_01"
+        )
+        assert status == "ok"
+
+    def test_renamed_entity_uses_newest_of_both_names(self):
+        app = _make_app()
+        _startup(app)
+        now = time.time()
+        app._mqtt_last_seen["Hue Recessed 01"] = now - 30000  # stale
+        app._mqtt_last_seen["downstairs_mudroom_hue_recessed_01"] = now - 60
+        status, _ = app._check_mqtt_recency(
+            "Hue Recessed 01", now, "light.downstairs_mudroom_hue_recessed_01"
+        )
+        assert status == "ok"
+
+    def test_renamed_entity_unknown_when_neither_name_seen(self):
+        app = _make_app()
+        _startup(app)
+        status, detail = app._check_mqtt_recency(
+            "Hue Recessed 01", time.time(),
+            "light.downstairs_mudroom_hue_recessed_01",
+        )
+        assert status == "unknown"
+        assert "no MQTT data" in detail
+
+
+class TestRenamedEntityRunChecks:
+    RENAMED_STATES: Dict[str, Any] = {
+        **MOCK_ALL_STATES,
+        "light.basement_mudroom_hue_recessed_01": {
+            "state": "on",
+            "attributes": {"friendly_name": "Hue Recessed 01"},
+        },
+    }
+
+    def test_renamed_entity_mqtt_check_ok_from_object_id_topic(self):
+        app = _make_app(all_states=self.RENAMED_STATES)
+        _startup(app)
+        assert app._entities["light.basement_mudroom_hue_recessed_01"] == (
+            "Hue Recessed 01"
+        )
+        app._mqtt_accept_after = 0
+        for device in (
+            "basement_hue_01",
+            "basement_hue_02",
+            "basement_mudroom_hue_recessed_01",
+        ):
+            app._on_mqtt_message("MQTT_MESSAGE", {
+                "topic": f"zigbee2mqtt/{device}",
+                "payload": '{"state":"ON"}',
+            }, {})
+        app.get_state = MagicMock(return_value="on")
+        app.fire_event.reset_mock()
+        app._run_checks()
+
+        results = json.loads(
+            _find_events(app, "report_status")[-1][1]["payload"]
+        )["results"]
+        by_name = {r["name"]: r for r in results}
+        assert by_name["Basement Mudroom Hue Recessed 01 MQTT"]["status"] == "ok"
+        assert all(r["status"] == "ok" for r in results)
+        log_lines = " ".join(str(c) for c in app.log.call_args_list)
+        assert "3/3 matched, 0 missing, 0 extra" in log_lines
+
 
 # ---------------------------------------------------------------------------
 # Tests -- MQTT Message Tracking
