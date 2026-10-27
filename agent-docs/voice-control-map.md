@@ -198,7 +198,7 @@ Schedules (all unconditional, manual state simply lasts until the next edge):
 | Lights | On | Off |
 |---|---|---|
 | Front yard Lily (100 %) + Calla (25 %), porch group (25 %), front door light | sunset | 00:00 |
-| Patio retaining wall relay (`switch.back_yard_retaining_wall_lights_relay`) + patio Hue Discover flood (`light.patio_hue_discover_flood_light`, since 2026-10-20, on at 33 % / 2850 K; not exposed to voice) + pavilion fan light (`light.pavilion_fan_light`, 33 %) | sunset | 00:00 |
+| Patio retaining wall relay (`switch.back_yard_retaining_wall_lights_relay`) + patio Hue Discover flood (`light.patio_hue_discover_flood_light`, since 2026-10-20, on at 33 % / 2850 K; not exposed to voice). The pavilion fan light (`light.pavilion_fan_light`, 33 %) is out for the off-season since 2026-10-27; add it back in spring | sunset | 00:00 |
 | Shed flowerbox relay (`switch.shed_exterior_lights_shelly_relay`) | sunset | 00:00 |
 | Driveway (`light.garage_driveway_inovelli_dimmer`), back yard (`light.garage_back_yard_inovelli_dimmer`) | sunset | 01:00 |
 | Back-yard motion-light relay | 00:00 | sunrise |
@@ -224,6 +224,7 @@ Schedules (all unconditional, manual state simply lasts until the next edge):
   added 2026-10-18 (Modern Forms, area Pavilion). Like the six indoor Modern Forms fans,
   `fan.pavilion_fan_fan` and `light.pavilion_fan_light` are exposed with the aliases
   "Pavilion fan" and "Pavilion fan light". It has no wall control or button mapping.
+  It is powered off for the off-season from 2026-10-27, so both read `unavailable` until spring.
   Opener bulbs `light.ratgdov25i_*_light` pass a domain-based deny list and should be
   denied by name.
 
