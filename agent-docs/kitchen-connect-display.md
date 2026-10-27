@@ -33,6 +33,19 @@ of the same size. The Disney countdown slot is column 2, `views[0].sections[1].c
 x 504, y 274.5, 440 x 247.5 (16:9). Measured again on 2026-10-18 with 0, 1, 2 and 3 timers and with
 one ringing: the slot stayed 440 x 247.5 at (504, 274.5), school lunch stayed at y 530, "Shed" at 1039.5.
 
+The weather card at the top of column 1 (`views[0].sections[0].cards[0]`, `custom:clock-weather-card`,
+HACS) needs two settings since v3.0.0 (HACS update, 2026-10-25), or it grows and pushes the bottom row
+off the screen:
+
+- `sections.forecast_strip.hide: true`. v3 added an hourly strip between the clock and the daily list
+  by default; hiding it gives back the v2 layout.
+- `sections.header.rows`: v3's default three rows with `time_pattern: h:mm` on the `time` segment.
+  v3 takes the clock format from the HA profile, so the 12-hour clock read "11:55 AM" at 4rem, did not
+  fit and showed "11:55 …". Tom chose `h:mm` with no AM/PM (2026-10-27).
+
+v3 silently ignores the v2 options it removed. After any later major update of the card, check this
+card against its release notes.
+
 ## The kitchen timers
 
 Up to three run at once, one **slot** each (N = 1..3). Helpers are live only and never mirrored; all
