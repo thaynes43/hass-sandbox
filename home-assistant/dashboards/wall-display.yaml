@@ -5,6 +5,36 @@ views:
         cards:
           - type: custom:clock-weather-card
             entity: weather.forecast_home
+            card_mod:
+              style: |
+                .card-content {
+                  padding-top: 0 !important;
+                  padding-bottom: 8px !important;
+                }
+            sections:
+              forecast_strip:
+                hide: true
+              forecast_list:
+                count: 3
+              header:
+                rows:
+                  - segments:
+                      - type: icon
+                        icon: mdi:thermometer
+                      - type: weather
+                        attribute: temperature
+                      - type: spacer
+                      - type: weather
+                  - font_size: 4rem
+                    alignment: center
+                    segments:
+                      - type: time
+                        time_pattern: h:mm
+                  - alignment: center
+                    segments:
+                      - type: icon
+                        icon: mdi:calendar
+                      - type: date
           - type: custom:bubble-card
             card_type: media-player
             sub_button:
