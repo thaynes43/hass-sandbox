@@ -79,7 +79,7 @@ class MqttDeviceChecker(hass.Hass):
 
         # Discovered entities: entity_id -> friendly_name
         self._entities: Dict[str, str] = {}
-        # MQTT tracking: friendly_name -> last message timestamp (epoch)
+        # MQTT tracking: Z2M device name -> last message timestamp (epoch)
         self._mqtt_last_seen: Dict[str, float] = {}
         # Ignore retained messages: only count messages after this time
         self._mqtt_accept_after: float = 0.0
@@ -333,9 +333,9 @@ class MqttDeviceChecker(hass.Hass):
             # HA Entity State Check
             ha_status, ha_detail = self._check_ha_entity(entity_id)
 
-            # MQTT Recency Check (using friendly_name as Z2M device name)
+            # MQTT Recency Check (Z2M device name: friendly_name or object_id)
             mqtt_status, mqtt_detail = self._check_mqtt_recency(
-                friendly_name, now
+                friendly_name, now, entity_id
             )
 
             # Cross-check logic:
@@ -374,14 +374,19 @@ class MqttDeviceChecker(hass.Hass):
         )
 
         # Log MQTT match diagnostics
-        expected_names = set(self._entities.values())
         tracked_names = set(self._mqtt_last_seen.keys())
-        matched = expected_names & tracked_names
-        unmatched_expected = expected_names - tracked_names
-        extra_tracked = tracked_names - expected_names
+        candidate_names: set = set()
+        unmatched_expected: List[str] = []
+        for entity_id, friendly_name in self._entities.items():
+            names = self._z2m_names(entity_id, friendly_name)
+            candidate_names.update(names)
+            if not tracked_names.intersection(names):
+                unmatched_expected.append(friendly_name)
+        matched_count = len(self._entities) - len(unmatched_expected)
+        extra_tracked = tracked_names - candidate_names
         self.log(
             f"MQTT tracking: {len(tracked_names)} total seen, "
-            f"{len(matched)}/{len(expected_names)} matched, "
+            f"{matched_count}/{len(self._entities)} matched, "
             f"{len(unmatched_expected)} missing, {len(extra_tracked)} extra",
             level="INFO",
         )
@@ -413,9 +418,35 @@ class MqttDeviceChecker(hass.Hass):
         except Exception as exc:
             return ("critical", f"error: {exc}")
 
-    def _check_mqtt_recency(self, friendly_name: str, now: float) -> tuple:
+    @staticmethod
+    def _z2m_names(entity_id: str, friendly_name: str) -> List[str]:
+        """Names the device may publish under: ``zigbee2mqtt/<name>``.
+
+        The HA friendly_name is the Z2M device name until someone gives the
+        entity its own name in HA. The three mudroom lights read "Hue
+        Recessed 01", "Hue Recessed 02" and "Inovelli Presence", so their
+        MQTT checks never matched and Downstairs Lights stayed ``unknown``
+        (2026-10-27). The entity_id's object_id keeps the Z2M name through
+        such a rename, so it is matched as well.
+        """
+        object_id = entity_id.split(".", 1)[-1]
+        if object_id == friendly_name:
+            return [friendly_name]
+        return [friendly_name, object_id]
+
+    def _check_mqtt_recency(
+        self, friendly_name: str, now: float, entity_id: str = ""
+    ) -> tuple:
         """Check when we last saw an MQTT message from a device."""
-        last_seen = self._mqtt_last_seen.get(friendly_name)
+        names = (
+            self._z2m_names(entity_id, friendly_name)
+            if entity_id
+            else [friendly_name]
+        )
+        seen = [
+            self._mqtt_last_seen[n] for n in names if n in self._mqtt_last_seen
+        ]
+        last_seen = max(seen) if seen else None
 
         if last_seen is None:
             return ("unknown", "no MQTT data yet")

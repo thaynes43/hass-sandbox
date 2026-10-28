@@ -5,7 +5,7 @@ Monitors Zigbee2MQTT devices via dual HA entity state and MQTT message tracking.
 ## How It Works
 
 1. On startup, discovers HA entities matching configured include/exclude regex patterns
-2. Subscribes to all MQTT messages and tracks the timestamp of the last message received per `zigbee2mqtt/<device>` topic (any message, not just linkquality)
+2. Subscribes to all MQTT messages and tracks the timestamp of the last message received per `zigbee2mqtt/<device>` topic (any message, not just linkquality). An entity matches a device by its HA `friendly_name` or by its entity_id's object_id, so an entity given its own name in HA still matches. On 2026-10-27 the mudroom lights were named "Hue Recessed 01", "Hue Recessed 02" and "Inovelli Presence", and before this change their MQTT checks stayed `unknown`.
 3. Skips retained messages delivered during initial subscribe (5-second grace period)
 4. Periodically checks each discovered entity for both HA state and MQTT freshness
 5. Cross-check logic is symmetric: if only one check fails, it is downgraded to **warning**; if both fail, both stay **critical**
