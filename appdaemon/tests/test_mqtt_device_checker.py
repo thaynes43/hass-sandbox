@@ -364,6 +364,30 @@ class TestMqttMessageTracking:
         }, {})
         assert "basement_hue_01" in app._mqtt_last_seen
 
+    @pytest.mark.parametrize("suffix", [
+        "set", "get", "availability", "set/state", "get/brightness",
+    ])
+    def test_ignores_commands_and_availability(self, suffix):
+        app = _make_app()
+        _startup(app)
+        app._mqtt_accept_after = 0
+        app._on_mqtt_message("MQTT_MESSAGE", {
+            "topic": f"zigbee2mqtt/basement_hue_01/{suffix}",
+            "payload": '{"state":""}',
+        }, {})
+        assert "basement_hue_01" not in app._mqtt_last_seen
+
+    def test_counts_device_attribute_topic(self):
+        # Z2M "attribute" output publishes zigbee2mqtt/<device>/<attribute>
+        app = _make_app()
+        _startup(app)
+        app._mqtt_accept_after = 0
+        app._on_mqtt_message("MQTT_MESSAGE", {
+            "topic": "zigbee2mqtt/basement_hue_01/brightness",
+            "payload": "254",
+        }, {})
+        assert "basement_hue_01" in app._mqtt_last_seen
+
     def test_ignores_bridge_topic(self):
         app = _make_app()
         _startup(app)
