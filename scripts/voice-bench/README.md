@@ -62,3 +62,31 @@ One targeted retest used the corrected native prompt prefixes, unchanged API ins
 The targeted run took 75.51 seconds, with a median of 5.43 seconds. Its cold Phone count took 21.03 seconds and cold Rumpus bulb question 30.00 seconds. There were no empty replies or protocol failures. A full corrected 12-turn regression and physical Rumpus voice test have not been performed. Keep the local deployment as a trial; remaining design work is recorded in `backlog/005-muse-cold-turn-latency.md` and `backlog/006-grounded-light-counts.md`.
 
 A small passing suite is evidence for the cases tested, not proof that all household voice requests are reliable. Keep the Rumpus proof-out and broader migration decision distinct from this direct-backend benchmark.
+
+# Model A/B through an Assist pipeline
+
+`model_ab.py` compares two conversation agents on Home Assistant's own path: the pipeline's intent stage, with the agent's real prompt, tools and settings. It runs inside the HA pod through `run.sh`. Use it before you change the model of a voice agent.
+
+1. Create two test copies of the room agent with `ha_config_set_helper(helper_type="config_subentry", …)`, one per model, and leave every other field as the room agent has it. Do not test on the room's own agent: family use warms and loads it during the run.
+2. Prove the copies match: `run.sh model_ab.py "ACTION=check SUBENTRIES=<room>,<copy A>,<copy B>"` prints each subentry's settings and its prompt's hash, never the prompt or a key. The official create flow guesses `city` again for OpenAI agents with user location on, so it can differ.
+3. Run read-only questions through **Bench Local (test agent)**. It has `prefer_local_intents: false`, so every question reaches the model. Pass `DEVICE_ID` of the room's satellite so the agent knows its area.
+
+```bash
+scripts/voice-bench/run.sh model_ab.py "ACTION=run PIPELINE=01m3g1wwhs6a5w0egwwp7wvvc6 \
+  AGENTS=conversation.<copy_a>,conversation.<copy_b> DEVICE_ID=<satellite device id> \
+  STATE_AREA=kitchen STATE_ENTITIES=lock.front_door_lock COLD=1 ROUNDS=1 \
+  QUERIES='What is the temperature in here?|Is the front door locked?'" > /private/ab.out
+ACTION=summary python3 scripts/voice-bench/model_ab.py < /private/ab.out
+```
+
+Before each turn the driver points the pipeline at one agent, alternating which agent goes first. Every turn starts a new conversation. Afterwards the driver points the pipeline back at its previous agent, even when a run fails. It records when the first text arrived, the first tool call and the intent end, all in seconds after the text was sent, plus the tool calls and the answer. Text-to-speech is not run.
+
+Pipeline text cannot carry an apostrophe through `run.sh`, so write "What is" rather than "What's".
+
+The driver stops after any tool call that is not a read tool: `GetLiveContext`, `GetDateTime`, the weather and to-do reads, or OpenAI web search. A question can still make a model act, though, and the stop comes only after that turn. So ask only questions that could never sensibly lead to an action.
+
+**Cold and warm.** `COLD=1`, or `COLD=<agent>,…`, labels an agent's first turn of that run as cold. Keep that agent idle for at least 15 minutes beforehand. OpenAI does not report whether a prefix came from its prompt cache, so "cold" means an agent that was idle that long, not a confirmed cache miss.
+
+`STATE_*` prints the live states before and after a run, so you can check the answers. Read every answer: the summary counts speed and failures, not correctness.
+
+Delete both test copies afterwards with `ha_remove_helpers_integrations(helper_type="config_subentry", …)`, and confirm that the pipeline points at `conversation.home_assistant` again.
