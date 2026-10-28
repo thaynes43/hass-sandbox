@@ -306,8 +306,14 @@ class MqttDeviceChecker(hass.Hass):
 
         # Extract device name: zigbee2mqtt/<device_name>[/...]
         remainder = topic[len(prefix):]
-        device_name = remainder.split("/")[0] if remainder else ""
+        parts = remainder.split("/") if remainder else []
+        device_name = parts[0] if parts else ""
         if not device_name or device_name in ("bridge", "group"):
+            return
+        # Only messages *from* the device count. HA's commands to it
+        # (<device>/set, <device>/get) would make a dead device look alive,
+        # and Z2M's <device>/availability says "offline" as often as "online".
+        if any(p in ("set", "get", "availability") for p in parts[1:]):
             return
 
         # Skip retained messages delivered during initial subscribe burst
