@@ -8,8 +8,13 @@ the room agents. Write them back with `ha_config_set_helper(helper_type="config_
 subentry_type="conversation", subentry_id, config={"prompt": ...})` — a patch, other fields keep
 their values. The prompt is a Jinja template in HA: keep curly-brace pairs out of it.
 
-The retained OpenAI agents: `gpt-5.6-terra`, `reasoning_effort: none`, `verbosity: low`,
-`service_tier: priority`, web search on. Bedroom and Movie Room pipelines: HA Cloud STT (`en-US`),
+The retained OpenAI agents: since 2026-10-29, `gpt-6.1-terra` with `reasoning_effort: low`. That is the lowest effort Home Assistant
+2026.10 offers for that model; it was `gpt-5.6-terra` with `none` until then. They also run `verbosity: low`,
+`service_tier: priority` and web search with user location. All five (Kitchen, Bedroom, Movie Room, Rumpus Room ChatGPT and the
+Phone fallback) carry the house location: Westford, Massachusetts, US, America/New_York. The swap and the location were written
+through haynes-ops' maintenance component (`set_voice_profile`, profile `terra61_westford`; the rollback is `terra56_westford`),
+driven by `scripts/voice-bench/voice_profile.py`. The benchmark behind the choice is in `scripts/voice-bench/README.md`. Do not save
+these agents through HA's own reconfigure flow: it asks a model where the home zone is and overwrites the city with a guess. Bedroom and Movie Room pipelines: HA Cloud STT (`en-US`),
 HA Cloud TTS (voice per room, unchanged). Since 2026-09-22 the **Kitchen** pipeline uses local STT
 (`stt.faster_whisper`, Parakeet) + local TTS (`tts.kokoro` `af_sarah`) with its OpenAI agent. The
 **Rumpus Room** satellite ran the local **Jarvis** pipeline from 2026-09-22, then returned to OpenAI
@@ -384,7 +389,7 @@ The model spends up to ~250 decode tokens before some tool calls, which is what 
 - Answers were accurate against live states, though some numbers came out as digits despite the prompt's rule.
 - Scripts and raw logs were kept in the session scratchpad only.
 
-**OpenAI fallback** (`conversation.phone_assist`, subentry `01M3FWW3MMFE079D9A7F2NF66F`, entry `01JBM33KVTM1FHF795G01R2C4X`: `gpt-5.6-terra`, the room agents' settings, `store_responses: false`, `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]`). It is kept and unchanged; to switch back, point the pipeline's conversation agent at it. Its prompt, up to its last section:
+**OpenAI fallback** (`conversation.phone_assist`, subentry `01M3FWW3MMFE079D9A7F2NF66F`, entry `01JBM33KVTM1FHF795G01R2C4X`: `gpt-6.1-terra` since 2026-10-29, the room agents' settings, `store_responses: false`, `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]`). It is kept, with its prompt and tools unchanged; only the model and location changed on 2026-10-29. To switch back, point the pipeline's conversation agent at it. Its prompt, up to its last section:
 
 ```text
 You are Assist, the voice assistant on Tom's phone. Work like Siri: neutral, friendly and to the point, with no character, catchphrases or jokes. You control the family's home in Westford, Massachusetts, and you answer everyday questions.
