@@ -62,3 +62,57 @@ One targeted retest used the corrected native prompt prefixes, unchanged API ins
 The targeted run took 75.51 seconds, with a median of 5.43 seconds. Its cold Phone count took 21.03 seconds and cold Rumpus bulb question 30.00 seconds. There were no empty replies or protocol failures. A full corrected 12-turn regression and physical Rumpus voice test have not been performed. Keep the local deployment as a trial; remaining design work is recorded in `backlog/005-muse-cold-turn-latency.md` and `backlog/006-grounded-light-counts.md`.
 
 A small passing suite is evidence for the cases tested, not proof that all household voice requests are reliable. Keep the Rumpus proof-out and broader migration decision distinct from this direct-backend benchmark.
+
+# Model A/B through an Assist pipeline
+
+`model_ab.py` compares two conversation agents on Home Assistant's own path: the pipeline's intent stage, with the agent's real prompt, tools and settings. It runs inside the HA pod through `run.sh`. Use it before you change the model of a voice agent.
+
+1. Create two test copies of the room agent with `ha_config_set_helper(helper_type="config_subentry", …)`, one per model, and leave every other field as the room agent has it. Do not test on the room's own agent: family use warms and loads it during the run.
+2. Prove the copies match: `run.sh model_ab.py "ACTION=check SUBENTRIES=<room>,<copy A>,<copy B>"` prints each subentry's settings and its prompt's hash, never the prompt or a key. The official create flow guesses `city` again for OpenAI agents with user location on, so it can differ.
+3. Run read-only questions through **Bench Local (test agent)**. It has `prefer_local_intents: false`, so every question reaches the model. Pass `DEVICE_ID` of the room's satellite so the agent knows its area.
+
+```bash
+scripts/voice-bench/run.sh model_ab.py "ACTION=run PIPELINE=01m3g1wwhs6a5w0egwwp7wvvc6 \
+  AGENTS=conversation.<copy_a>,conversation.<copy_b> DEVICE_ID=<satellite device id> \
+  STATE_AREA=kitchen STATE_ENTITIES=lock.front_door_lock COLD=1 ROUNDS=1 \
+  QUERIES='What is the temperature in here?|Is the front door locked?'" > /private/ab.out
+ACTION=summary python3 scripts/voice-bench/model_ab.py < /private/ab.out
+```
+
+Before each turn the driver points the pipeline at one agent, alternating which agent goes first. Every turn starts a new conversation. Afterwards the driver points the pipeline back at its previous agent, even when a run fails. It records when the first text arrived, the first tool call and the intent end, all in seconds after the text was sent, plus the tool calls and the answer. Text-to-speech is not run.
+
+Pipeline text cannot carry an apostrophe through `run.sh`, so write "What is" rather than "What's".
+
+The driver stops after any tool call that is not a read tool: `GetLiveContext`, `GetDateTime`, the weather and to-do reads, or OpenAI web search. A question can still make a model act, though, and the stop comes only after that turn. So ask only questions that could never sensibly lead to an action.
+
+**Cold and warm.** `COLD=1`, or `COLD=<agent>,…`, labels an agent's first turn of that run as cold. Keep that agent idle for at least 15 minutes beforehand. OpenAI does not report whether a prefix came from its prompt cache, so "cold" means an agent that was idle that long, not a confirmed cache miss.
+
+`STATE_*` prints the live states before and after a run, so you can check the answers. Read every answer: the summary counts speed and failures, not correctness.
+
+Delete both test copies afterwards with `ha_remove_helpers_integrations(helper_type="config_subentry", …)`, and confirm that the pipeline points at `conversation.home_assistant` again.
+
+## gpt-6.1-terra against gpt-5.6-terra, 2026-10-28
+
+At the time of this run, the Kitchen, Bedroom, Movie Room and Rumpus Room ChatGPT agents ran `gpt-5.6-terra`, as did the Phone Assist OpenAI fallback. They all used `reasoning_effort: none`, `verbosity: low`, `service_tier: priority` and web search. Home Assistant's OpenAI integration offers `gpt-6.1-terra` only `low`, `medium`, `high`, `xhigh` or `max`, so the candidate ran `low`. A swap could not keep `none` either.
+
+The test used two copies of Kitchen ChatGPT that differed only in the model and the reasoning effort. Both had the Kitchen prompt's hash and the Assist API, and both ran as the kitchen satellite through Bench Local. Each copy answered six read-only questions: temperature, lights, front door, tomorrow's weather, a pep talk and the last Celtics game. Turns alternated between the copies. The run had 56 turns, 28 per model: 3 cold turns, each after at least 15 idle minutes, and 25 warm. The times measure the intent stage of the text path, from submitting the text to the end of the answer. They exclude STT and TTS.
+
+| Seconds to end of answer | gpt-5.6-terra (none) | gpt-6.1-terra (low) |
+|---|---|---|
+| Warm, all questions: median / p90 / max (n=25) | 2.79 / 4.15 / 4.81 | 3.49 / 7.01 / 19.31 |
+| Warm, lights and door, one lookup each: median (n=10) | 2.67 | 3.14 |
+| Cold, temperature question: median (n=3) | 3.87 | 5.31 |
+
+- Neither model had errors, empty answers or actuating tool calls.
+- The first tool call came at a median of about 1.3 s for both models. 6.1 then took longer to answer. It also looked things up more often. It made a second lookup on every temperature turn (5 of 5), where 5.6 did so on 2 of 6, and it always used web search for the weather.
+- The 19.3 s maximum was a 6.1 weather turn that ran two web searches.
+
+What the answers got right:
+
+- **Lights and front door:** both models were right every time.
+- **Temperature in here:** the kitchen has no exposed temperature sensor. 5.6 said so every time, and twice gave the outside temperature instead. 6.1 looked again every time and gave the First Floor Ecobee reading (70.3, live 70.2).
+- **Weather tomorrow:** the HA forecast said sunny, 67/42. 5.6 twice gave about forty-four degrees, which was today's temperature, not tomorrow's. 6.1 always used web search for the copy's re-guessed city (Hudson NH) and said about seventy.
+- **Last Celtics game:** 5.6 said it could not get the score on 3 of 4 warm turns, each time within about 2.2 s. 6.1 answered on all 4. When either answered, it gave the same score: a win over the Nets, 125-124. A separate web search could not confirm that score.
+- **Dashes:** 4 of 5.6's 28 answers contained a dash, which the prompt's no-symbols rule forbids. None of 6.1's did.
+
+Limitations: this was one evening, one room's persona, text only, with small samples (3 cold and 25 warm turns per model). OpenAI does not say whether a turn hit its prompt cache. The flow guessed a different web-search city for each copy.
