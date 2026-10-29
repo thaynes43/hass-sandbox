@@ -90,3 +90,29 @@ The driver stops after any tool call that is not a read tool: `GetLiveContext`, 
 `STATE_*` prints the live states before and after a run, so you can check the answers. Read every answer: the summary counts speed and failures, not correctness.
 
 Delete both test copies afterwards with `ha_remove_helpers_integrations(helper_type="config_subentry", …)`, and confirm that the pipeline points at `conversation.home_assistant` again.
+
+## gpt-6.1-terra against gpt-5.6-terra, 2026-10-28
+
+At the time of this run, the Kitchen, Bedroom, Movie Room and Rumpus Room ChatGPT agents ran `gpt-5.6-terra`, as did the Phone Assist OpenAI fallback. They all used `reasoning_effort: none`, `verbosity: low`, `service_tier: priority` and web search. Home Assistant's OpenAI integration offers `gpt-6.1-terra` only `low`, `medium`, `high`, `xhigh` or `max`, so the candidate ran `low`. A swap could not keep `none` either.
+
+The test used two copies of Kitchen ChatGPT that differed only in the model and the reasoning effort. Both had the Kitchen prompt's hash and the Assist API, and both ran as the kitchen satellite through Bench Local. Each copy answered six read-only questions: temperature, lights, front door, tomorrow's weather, a pep talk and the last Celtics game. Turns alternated between the copies. The run had 56 turns, 28 per model: 3 cold turns, each after at least 15 idle minutes, and 25 warm. The times measure the intent stage of the text path, from submitting the text to the end of the answer. They exclude STT and TTS.
+
+| Seconds to end of answer | gpt-5.6-terra (none) | gpt-6.1-terra (low) |
+|---|---|---|
+| Warm, all questions: median / p90 / max (n=25) | 2.79 / 4.15 / 4.81 | 3.49 / 7.01 / 19.31 |
+| Warm, lights and door, one lookup each: median (n=10) | 2.67 | 3.14 |
+| Cold, temperature question: median (n=3) | 3.87 | 5.31 |
+
+- Neither model had errors, empty answers or actuating tool calls.
+- The first tool call came at a median of about 1.3 s for both models. 6.1 then took longer to answer. It also made more lookups: 2 rather than 1 on the temperature question, and it chose web search for the weather.
+- The 19.3 s maximum was a 6.1 weather turn that ran two web searches.
+
+What the answers got right:
+
+- **Lights and front door:** both models were right every time.
+- **Temperature in here:** the kitchen has no exposed temperature sensor. 5.6 said so every time, and twice gave the outside temperature instead. 6.1 looked again every time and gave the First Floor Ecobee reading (70.3, live 70.2).
+- **Weather tomorrow:** the HA forecast said sunny, 67/42. 5.6 twice gave about forty-four degrees, which was today's temperature, not tomorrow's. 6.1 always used web search for the copy's re-guessed city (Hudson NH) and said about seventy.
+- **Last Celtics game:** 5.6 said it could not get the score on 3 of 4 warm turns, each time within about 2.2 s. 6.1 answered on all 4. When either answered, it gave the same score: a win over the Nets, 125-124. A separate web search could not confirm that score.
+- **Dashes:** 4 of 5.6's 28 answers contained a dash, which the prompt's no-symbols rule forbids. None of 6.1's did.
+
+Limitations: this was one evening, one room's persona, text only, with small samples (3 cold and 25 warm turns per model). OpenAI does not say whether a turn hit its prompt cache. The flow guessed a different web-search city for each copy.
