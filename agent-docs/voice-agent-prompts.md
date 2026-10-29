@@ -389,7 +389,7 @@ The model spends up to ~250 decode tokens before some tool calls, which is what 
 - Answers were accurate against live states, though some numbers came out as digits despite the prompt's rule.
 - Scripts and raw logs were kept in the session scratchpad only.
 
-**OpenAI fallback** (`conversation.phone_assist`, subentry `01M3FWW3MMFE079D9A7F2NF66F`, entry `01JBM33KVTM1FHF795G01R2C4X`: `gpt-6.1-terra` since 2026-10-29, the room agents' settings, `store_responses: false`, `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]`). It is kept and unchanged; to switch back, point the pipeline's conversation agent at it. Its prompt, up to its last section:
+**OpenAI fallback** (`conversation.phone_assist`, subentry `01M3FWW3MMFE079D9A7F2NF66F`, entry `01JBM33KVTM1FHF795G01R2C4X`: `gpt-6.1-terra` since 2026-10-29, the room agents' settings, `store_responses: false`, `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]`). It is kept, with its prompt and tools unchanged; only the model and location changed on 2026-10-29. To switch back, point the pipeline's conversation agent at it. Its prompt, up to its last section:
 
 ```text
 You are Assist, the voice assistant on Tom's phone. Work like Siri: neutral, friendly and to the point, with no character, catchphrases or jokes. You control the family's home in Westford, Massachusetts, and you answer everyday questions.

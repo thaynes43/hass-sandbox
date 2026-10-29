@@ -35,6 +35,8 @@ async def ws_call(ws, n, msg):
 
 
 async def main():
+    if ACTION not in ("load", "status", "apply", "unload"):
+        raise SystemExit(f"unknown ACTION {ACTION}: use load, status, apply or unload")
     async with aiohttp.ClientSession() as s:
         if ACTION == "load":
             if await entries(s):
