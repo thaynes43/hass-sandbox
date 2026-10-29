@@ -11,15 +11,15 @@ ACTION=run  PIPELINE=<id> AGENTS=<entity>,<entity> QUERIES='q1|q2|...' [ROUNDS=1
     COLD=1 (or COLD=<entity>,...) marks each (listed) agent's first turn of this invocation as cold: the
     caller keeps that agent idle first.
     Every turn starts a new conversation. TTS is not run: it does not depend on the model.
-    Stops after any tool call outside READ_ONLY_TOOLS. Always points the pipeline back where it was.
+    Stops after any tool call outside READ_ONLY_TOOLS. Then points the pipeline back where it was, on a fresh
+    socket with retries; if that fails it prints RESTORE FAILED and exits 1. A killed run cannot restore.
     STATE_AREA=<area id> STATE_ENTITIES=<entity>,... print STATE lines before and after, to check answers against.
 
 ACTION=summary  (locally, no HA)  python3 model_ab.py < saved run output
     Per agent and cold/warm: sample count, median, p90 (nearest rank) and max of first text and intent end,
     failures (error or empty answer) and lookups per turn; then medians per query. Read the answers yourself.
 """
-import asyncio, hashlib, json, os, statistics, sys, time
-import aiohttp
+import asyncio, hashlib, json, os, re, statistics, sys, time
 
 BASE = "http://localhost:8123"
 TOK = os.environ.get("HA_TOKEN", "")
@@ -30,6 +30,14 @@ READ_ONLY_TOOLS = {"GetLiveContext", "GetDateTime", "HassGetWeather", "HassGetCu
 STATE_AREA = os.environ.get("STATE_AREA", "")  # area whose lights and temperature sensors the answers concern
 STATE_ENTITIES = [e for e in os.environ.get("STATE_ENTITIES", "").split(",") if e]
 TURN_TIMEOUT = 90
+WS_TIMEOUT = 15
+RESTORE_PAUSE = 2  # seconds between restore attempts
+SECRET_KEY = re.compile(r"(^|_)(key|token|api_?key|secret|password|access_token|refresh_token|auth|bearer)$")
+
+
+def public_settings(data):
+    """Subentry data without the prompt or anything that may hold a credential (max_tokens stays)."""
+    return {k: v for k, v in data.items() if k != "prompt" and not SECRET_KEY.search(k.lower())}
 
 
 def check():
@@ -41,8 +49,7 @@ def check():
         for s in e.get("subentries", []):
             if s["subentry_id"] not in want:
                 continue
-            data = {k: v for k, v in s["data"].items()
-                    if k != "prompt" and not any(x in k.lower() for x in ("key", "token", "secret", "password"))}
+            data = public_settings(s["data"])
             p = s["data"].get("prompt", "")
             print(f"{s['title']} | {s['subentry_id']} | prompt sha256 {hashlib.sha256(p.encode()).hexdigest()[:16]} "
                   f"len {len(p)} | {json.dumps(data, sort_keys=True)}")
@@ -56,11 +63,41 @@ class Ws:
         self.n += 1
         await self.ws.send_json({"id": self.n, **msg})
         while True:
-            j = await self.ws.receive_json()
+            j = await asyncio.wait_for(self.ws.receive_json(), timeout=WS_TIMEOUT)
             if j.get("id") == self.n and j.get("type") == "result":
                 if not j.get("success"):
                     raise RuntimeError(f"{msg['type']}: {j.get('error')}")
                 return j.get("result")
+
+
+async def connect(s):
+    ws = await s.ws_connect(f"{BASE}/api/websocket")
+    await asyncio.wait_for(ws.receive_json(), timeout=WS_TIMEOUT)
+    await ws.send_json({"type": "auth", "access_token": TOK})
+    await asyncio.wait_for(ws.receive_json(), timeout=WS_TIMEOUT)
+    return ws
+
+
+async def restore(s, base, original, attempts=3):
+    """Point the pipeline back at its original agent on a fresh socket each try: the run's socket may be dead."""
+    for attempt in range(1, attempts + 1):
+        try:
+            ws = await connect(s)
+            try:
+                w = Ws(ws)
+                await set_agent(w, base, original)
+                after = await w.call({"type": "assist_pipeline/pipeline/get", "pipeline_id": base["id"]})
+            finally:
+                await ws.close()
+            if after["conversation_engine"] == original:
+                print("PIPELINE agent restored:", original, flush=True)
+                return True
+            print(f"restore attempt {attempt}: pipeline reads {after['conversation_engine']}", flush=True)
+        except Exception as ex:
+            print(f"restore attempt {attempt} failed: {type(ex).__name__}: {ex}", flush=True)
+        await asyncio.sleep(RESTORE_PAUSE)
+    print(f"RESTORE FAILED: pipeline {base['id']} may still point at a test agent; set it back to {original}", flush=True)
+    return False
 
 
 async def set_agent(w, base, agent):
@@ -70,10 +107,9 @@ async def set_agent(w, base, agent):
 
 
 async def turn(s, pipeline, text, device_id):
-    async with s.ws_connect(f"{BASE}/api/websocket") as ws:
-        await ws.receive_json()
-        await ws.send_json({"type": "auth", "access_token": TOK})
-        await ws.receive_json()
+    import aiohttp
+    ws = await connect(s)
+    try:
         msg = {"id": 1, "type": "assist_pipeline/run", "start_stage": "intent", "end_stage": "intent",
                "pipeline": pipeline, "input": {"text": text}}
         if device_id:
@@ -83,7 +119,12 @@ async def turn(s, pipeline, text, device_id):
         r = {"first_text_s": None, "first_tool_s": None, "intent_end_s": None, "tools": [], "speech": "",
              "response_type": None, "error": None}
         while True:
-            m = await asyncio.wait_for(ws.receive(), timeout=TURN_TIMEOUT)
+            left = TURN_TIMEOUT - (time.monotonic() - t0)
+            try:
+                m = await asyncio.wait_for(ws.receive(), timeout=max(left, 0.01))
+            except asyncio.TimeoutError:  # keep the tool calls seen so far: the guard must still see them
+                r["error"] = f"timeout {TURN_TIMEOUT}s"
+                break
             if m.type != aiohttp.WSMsgType.TEXT:
                 r["error"] = f"socket {m.type}"
                 break
@@ -115,6 +156,8 @@ async def turn(s, pipeline, text, device_id):
             if et in ("run-end", "error"):
                 break
         return r
+    finally:
+        await ws.close()
 
 
 async def states(s):
@@ -143,6 +186,7 @@ def blocked_tools(tools):
 
 
 async def run():
+    import aiohttp
     pipeline = os.environ["PIPELINE"]
     agents = [a for a in os.environ["AGENTS"].split(",") if a]
     queries = [q for q in os.environ["QUERIES"].split("|") if q]
@@ -150,11 +194,10 @@ async def run():
     cold = cold_agents(os.environ.get("COLD", "0"), agents)
     device_id = os.environ.get("DEVICE_ID", "")
     used = set()
+    restored = True
     async with aiohttp.ClientSession() as s:
-        async with s.ws_connect(f"{BASE}/api/websocket") as raw:
-            await raw.receive_json()
-            await raw.send_json({"type": "auth", "access_token": TOK})
-            await raw.receive_json()
+        raw = await connect(s)
+        try:
             w = Ws(raw)
             base = await w.call({"type": "assist_pipeline/pipeline/get", "pipeline_id": pipeline})
             original = base["conversation_engine"]
@@ -169,10 +212,7 @@ async def run():
                             await set_agent(w, base, agent)
                             kind = "cold" if agent in cold and agent not in used else "warm"
                             used.add(agent)
-                            try:
-                                r = await turn(s, pipeline, q, device_id)
-                            except asyncio.TimeoutError:
-                                r = {"error": f"timeout {TURN_TIMEOUT}s", "tools": []}
+                            r = await turn(s, pipeline, q, device_id)
                             row = {"ts": time.strftime("%H:%M:%S"), "round": rnd + 1, "agent": agent, "kind": kind,
                                    "query": q, **r}
                             print("ROW", json.dumps(row), flush=True)
@@ -186,10 +226,12 @@ async def run():
                     if stop:
                         break
             finally:
-                await set_agent(w, base, original)
-                after = await w.call({"type": "assist_pipeline/pipeline/get", "pipeline_id": pipeline})
-                print("PIPELINE agent restored:", after["conversation_engine"])
+                restored = await restore(s, base, original)
             await states(s)
+        finally:
+            await raw.close()
+    if not restored:
+        raise SystemExit(1)
 
 
 def pct(xs, q):
@@ -200,6 +242,8 @@ def pct(xs, q):
 def summary(lines):
     rows = [json.loads(l[4:]) for l in lines if l.startswith("ROW ")]
     med = lambda xs: statistics.median(xs) if xs else None
+    good = lambda r: not r.get("error") and r.get("speech") and r.get("response_type") != "error"
+    call_key = lambda t: t.get("id") or (t.get("name"), json.dumps(t.get("args"), sort_keys=True))
     fmt = lambda v: "   -  " if v is None else f"{v:6.2f}"
     print(f"{'agent':34s} {'kind':4s}  n | first text: med   p90   max | intent end: med   p90   max | fail lookups")
     for agent in sorted({r["agent"] for r in rows}):
@@ -207,17 +251,18 @@ def summary(lines):
             rs = [r for r in rows if r["agent"] == agent and r["kind"] == kind]
             if not rs:
                 continue
-            ok = [r for r in rs if not r.get("error") and r.get("speech")]
+            ok = [r for r in rs if good(r)]
             ft = [r["first_text_s"] for r in ok if r.get("first_text_s") is not None]
             ie = [r["intent_end_s"] for r in ok if r.get("intent_end_s") is not None]
-            look = sum(len({t.get("id") for t in r.get("tools", [])}) for r in ok) / max(1, len(ok))
+            look = sum(len({call_key(t) for t in r.get("tools", [])}) for r in ok) / max(1, len(ok))
             print(f"{agent:34s} {kind:4s} {len(rs):2d} |       {fmt(med(ft))}{fmt(pct(ft, 90))}{fmt(max(ft) if ft else None)}"
                   f" |       {fmt(med(ie))}{fmt(pct(ie, 90))}{fmt(max(ie) if ie else None)} | {len(rs) - len(ok):4d} {look:6.2f}")
     print()
     for q in dict.fromkeys(r["query"] for r in rows):
         line = f"{q[:40]:40s}"
         for agent in sorted({r["agent"] for r in rows}):
-            ie = [r["intent_end_s"] for r in rows if r["agent"] == agent and r["query"] == q and r.get("intent_end_s")]
+            ie = [r["intent_end_s"] for r in rows
+                  if r["agent"] == agent and r["query"] == q and good(r) and r.get("intent_end_s") is not None]
             line += f" | {agent.split('.')[-1][:22]:22s} n={len(ie):2d} med {fmt(med(ie))}"
         print(line)
 

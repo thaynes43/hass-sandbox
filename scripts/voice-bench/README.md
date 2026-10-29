@@ -104,7 +104,7 @@ The test used two copies of Kitchen ChatGPT that differed only in the model and 
 | Cold, temperature question: median (n=3) | 3.87 | 5.31 |
 
 - Neither model had errors, empty answers or actuating tool calls.
-- The first tool call came at a median of about 1.3 s for both models. 6.1 then took longer to answer. It also made more lookups: 2 rather than 1 on the temperature question, and it chose web search for the weather.
+- The first tool call came at a median of about 1.3 s for both models. 6.1 then took longer to answer. It also looked things up more often. It made a second lookup on every temperature turn (5 of 5), where 5.6 did so on 2 of 6, and it always used web search for the weather.
 - The 19.3 s maximum was a 6.1 weather turn that ran two web searches.
 
 What the answers got right:
