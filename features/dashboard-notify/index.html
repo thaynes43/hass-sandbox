@@ -1055,13 +1055,14 @@
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>       custom:dashboard-notify-card (Lovelace)
 </code></pre></div>
 <h2 id="image-generation">Image generation</h2>
-<p>Images are generated using the configured AI provider (OpenAI or Gemini). Each image is built from:</p>
+<p>Images are generated using the configured AI provider. Production renders them locally on ComfyUI with Qwen-Image-2.1 text-to-image, the same model that draws the detection summaries, so each image takes about 35 seconds and costs nothing. Each image is built from:</p>
 <ul>
-<li>The notification text and scene hint</li>
+<li>The scene hint (or, with no hint, the notification's theme as pictures only; the card prints the message text below the image)</li>
 <li>A randomly selected <strong>style profile</strong> (cartoon, watercolor, pixel art, etc.)</li>
 <li>A randomly selected <strong>environment variant</strong> (space, underwater, enchanted forest, etc.)</li>
 </ul>
 <p>Both layers are applied as secondary appearance/setting modifiers — subject content is always preserved.</p>
+<p>A failed render is retried, and after a restart the last idle image already on disk is shown until a new one is ready, so a restart or a provider outage does not blank the card.</p>
 <h2 id="dashboard-card">Dashboard card</h2>
 <p>The <code>custom:dashboard-notify-card</code> element provides the carousel UI. It reads from <code>sensor.dashboard_notify_status</code> and sends commands (dismiss, pause, navigate) via <code>script.dashboard_notify_relay</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">custom:dashboard-notify-card</span>
