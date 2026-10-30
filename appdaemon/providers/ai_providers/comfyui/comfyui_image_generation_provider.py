@@ -49,14 +49,15 @@ SOURCE_REGISTRY_DEFAULT = "registry_default"
 DEFAULT_UPLOAD_NAMESPACE = "comfyui"
 DEFAULT_FILENAME_PREFIX = "detection-summary"
 
-# What is true of every ComfyUI workflow. ``max_input_images`` is deliberately
-# left unset here: it is the resolved workflow's slot count, so each provider
-# instance fills it in once it knows which workflow it will send.
+# What is true of every ComfyUI workflow. ``max_input_images`` and the two
+# ``supports_*`` flags are per instance: they follow the resolved workflow's
+# image slots (none for a text-to-image graph), so each provider fills them in
+# once it knows which workflow it will send.
 _BASE_CAPABILITIES = ImageProviderCapabilities(
     supports_text_to_image=False,
     supports_image_to_image=True,
     supports_inpaint=False,
-    notes="Uses ComfyUI workflow API for image-to-image generation.",
+    notes="Uses the ComfyUI workflow API; the workflow decides image-to-image or text-to-image.",
 )
 
 # Per-request socket timeout for the short calls — upload, POST /prompt, and
@@ -302,9 +303,12 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         # This reports the workflow that will be *requested*. A one-shot
         # fallback can land on a different entry with fewer slots, which is
         # exactly why ``_attempt`` keeps truncating on its own.
+        workflow = self._registry.get(self.workflow_name)
         self.capabilities = dataclass_replace(
             _BASE_CAPABILITIES,
-            max_input_images=self._registry.get(self.workflow_name).max_images,
+            supports_text_to_image=workflow.text_to_image,
+            supports_image_to_image=not workflow.text_to_image,
+            max_input_images=workflow.max_images,
         )
 
     def _require_registered(self, field_name: str, value: Optional[str]) -> None:
@@ -355,8 +359,11 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
             if str(p).strip()
         ]
         out_path = Path(output_image_path)
+        requested = self.workflow_name
 
-        if not in_paths:
+        # A text-to-image workflow (``images: []``) renders from the prompt
+        # alone; every other workflow needs at least its first frame.
+        if not in_paths and not self._registry.get(requested).text_to_image:
             raise ExternalImageGenError("input_image_paths is required")
         missing = [p for p in in_paths if not p.exists()]
         if missing:
@@ -364,7 +371,6 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         if not str(prompt or "").strip():
             raise ExternalImageGenError("prompt is required")
 
-        requested = self.workflow_name
         fallback = str(self._config.fallback_workflow_name or "").strip()
         started = time.time()
 
@@ -379,6 +385,10 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
             )
         except ComfyUIWorkflowRejectedError as exc:
             if not fallback or fallback == requested:
+                raise
+            if not in_paths and not self._registry.get(fallback).text_to_image:
+                # The fallback is an edit graph and there is no frame to give
+                # it; a retry could only fail on "input_image_paths is required".
                 raise
             logger.warning(
                 "ComfyUI workflow %r was rejected (%s); retrying once with the fallback "
@@ -422,7 +432,7 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         used_paths = in_paths[: workflow.max_images]
         ignored_paths = in_paths[workflow.max_images :]
 
-        input_dimensions = self._check_primary_input(used_paths[0])
+        input_dimensions = self._check_primary_input(used_paths[0]) if used_paths else None
 
         with _upload_lock(namespace):
             uploaded_names: List[str] = []
@@ -461,7 +471,7 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
             "input_paths": [str(p) for p in in_paths],
             "output_path": str(out_path),
             "prompt_id": prompt_id,
-            "uploaded_input_name": uploaded_names[0],
+            "uploaded_input_name": uploaded_names[0] if uploaded_names else None,
             "uploaded_input_names": list(uploaded_names),
             "workflow_name": workflow.name,
             "workflow_name_requested": requested_name,

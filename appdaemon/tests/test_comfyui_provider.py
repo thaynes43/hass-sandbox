@@ -58,6 +58,7 @@ def _upload_response(name: str = "uploaded.jpg") -> MagicMock:
 # those must say so.
 _QWEN21_3FRAME = "qwen-image-2.1-2609-25step-edit-3frame"  # the registry default
 _QWEN21_3FRAME_GPU1 = "qwen-image-2.1-2609-25step-edit-3frame-gpu1"  # the bundle default
+_QWEN21_T2I_GPU1 = "qwen-image-2.1-2609-25step-t2i-gpu1"  # dashboard_notify
 _QWEN21 = "qwen-image-2.1-2609-25step-edit"
 _LEGACY = "qwen-image-edit-2509-lightning4-legacy"
 _TUNED = "qwen-image-edit-2509-lightning4-tuned"
@@ -372,6 +373,54 @@ def test_requires_input_paths(tmp_path: Path) -> None:
     assert "input_image_paths" in str(exc_info.value)
 
 
+def test_text_to_image_workflow_renders_without_inputs(tmp_path: Path) -> None:
+    out_path = tmp_path / "no_notifications_1.png"
+    fake = _Urlopen(
+        [_json_response({"prompt_id": "pid-t2i"}), _history_response("pid-t2i"), _view_response()]
+    )
+    provider = _make_provider(workflow_name=_QWEN21_T2I_GPU1, fallback_workflow_name=_QWEN21_3FRAME)
+
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=[], prompt="A calm garden.", output_image_path=str(out_path)
+        )
+
+    assert out_path.read_bytes().startswith(b"\x89PNG")
+    assert not [u for u in fake.urls() if "/upload/image" in u]
+    graph = json.loads(fake.requests[0].data.decode("utf-8"))["prompt"]
+    assert graph["6"]["inputs"]["prompt"] == "A calm garden."
+    assert graph["9"]["inputs"]["filename_prefix"] == "no_notifications_1"
+    assert result["workflow_name"] == _QWEN21_T2I_GPU1
+    assert result["uploaded_input_name"] is None
+    assert result["uploaded_input_names"] == []
+    assert "input_dimensions" not in result
+    assert "ignored_input_paths" not in result
+
+
+def test_text_to_image_workflow_ignores_frames_it_cannot_use(tmp_path: Path) -> None:
+    fake = _Urlopen(
+        [_json_response({"prompt_id": "pid-t2i"}), _history_response("pid-t2i"), _view_response()]
+    )
+    provider = _make_provider(workflow_name=_QWEN21_T2I_GPU1)
+    frames = _inputs(tmp_path, 1)
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=frames, prompt="p", output_image_path=str(tmp_path / "o.png")
+        )
+    assert not [u for u in fake.urls() if "/upload/image" in u]
+    assert result["ignored_input_paths"] == frames
+
+
+def test_rejected_text_to_image_does_not_fall_back_to_an_edit_graph(tmp_path: Path) -> None:
+    """With no frame to give it, the edit default could only fail differently."""
+    fake = _Urlopen([_http_error(400, _DEVICE_NOT_IN_LIST_BODY)])
+    provider = _make_provider(workflow_name=_QWEN21_T2I_GPU1, fallback_workflow_name=_QWEN21_3FRAME)
+    with patch("urllib.request.urlopen", new=fake):
+        with pytest.raises(ComfyUIWorkflowRejectedError):
+            provider.edit_image(input_image_paths=[], prompt="p", output_image_path=str(tmp_path / "o.png"))
+    assert fake.call_count == 1
+
+
 def test_requires_existing_inputs(tmp_path: Path) -> None:
     provider = _make_provider()
     with pytest.raises(ExternalImageGenError) as exc_info:
@@ -435,6 +484,7 @@ def test_empty_workflow_name_is_the_registry_default() -> None:
         (_LEGACY, 1),
         (_TUNED, 1),
         (_TUNED_3FRAME, 3),
+        (_QWEN21_T2I_GPU1, 0),
     ],
 )
 def test_capabilities_report_the_workflow_slot_count(
@@ -465,6 +515,13 @@ def test_capabilities_keep_the_flags_callers_already_read() -> None:
     assert provider.capabilities.supports_text_to_image is False
     assert provider.capabilities.supports_inpaint is False
     assert provider.capabilities.notes
+
+
+def test_text_to_image_workflow_flips_the_capability_flags() -> None:
+    provider = _make_provider(workflow_name=_QWEN21_T2I_GPU1)
+    assert provider.capabilities.supports_text_to_image is True
+    assert provider.capabilities.supports_image_to_image is False
+    assert provider.capabilities.max_input_images == 0
 
 
 def test_default_workflow_capabilities_match_the_registry_default() -> None:

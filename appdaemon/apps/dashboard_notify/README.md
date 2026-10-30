@@ -25,7 +25,7 @@ State is published to `sensor.dashboard_notify_status`. The card reads from this
 | Provider | Usage |
 |----------|-------|
 | `ha_provisioner` | Creates relay script and status sensor on startup |
-| `ai_providers` (image capability) | Generates notification and placeholder images via `edit_image` |
+| `ai_providers` (image capability) | Generates notification and placeholder images via `edit_image` with no input images. Production uses the local ComfyUI text-to-image workflow `qwen-image-2.1-2609-25step-t2i-gpu1` (same Qwen-Image-2.1 model as the detection summaries); see [Image provider](#image-provider) |
 
 ## Upstream/downstream dependencies
 
@@ -83,6 +83,37 @@ status_entity: sensor.dashboard_notify_status
 relay_script: dashboard_notify_relay
 ```
 
+## Image provider
+
+Production config:
+
+```yaml
+ai_provider_conf:
+  image: comfyui-qwen-edit
+  image_workflow: qwen-image-2.1-2609-25step-t2i-gpu1
+```
+
+The bundle supplies the ComfyUI URL; `image_workflow` swaps the camera edit graph
+for the text-to-image one, which shares its loaded model, so a render takes about
+35 s and costs nothing per image. Until 2026-10-30 this app used `gemini-default`.
+Gemini's prepaid credits ran out on 2026-10-16 (HTTP 402), every render failed from
+then on, and the idle card went black after each AppDaemon restart.
+
+Qwen-Image letters any quoted words into the picture, and the card already prints
+the message below the image, so the prompt builder leaves the message text out when a
+`prompt_hint` is set and otherwise asks for the theme as pictures only.
+
+### Failure handling
+
+- **Idle placeholder:** a failed render is retried after `generation_retry_s`,
+  doubling per consecutive failure up to `no_notification_refresh_s`. On startup the
+  newest `no_notifications_*.png` already on disk is shown until a fresh one renders,
+  so a restart never blanks the card.
+- **Scheduled notifications:** a failed render is retried every `generation_retry_s`
+  while its schedule window is still open.
+- **Retention:** `generated/` keeps every render, so files older than
+  `generated_retention_days` are deleted at startup and daily. Images on screen are kept.
+
 ## Notification Classes
 
 | Class | Priority | Use Case |
@@ -101,6 +132,9 @@ See `apps-prod.yaml` for full config. Key settings:
 - `pause_auto_resume_s` — Automatically resume after this many paused seconds (default: 600; `0` disables it)
 - `default_ttl_s` — Default notification TTL (default: 1hr)
 - `no_notification_refresh_s` — Placeholder refresh interval (default: 1hr)
+- `generation_retry_s` — Delay before retrying a failed render (default: 300s, minimum 60s); the placeholder backs off from here to `no_notification_refresh_s`
+- `generated_retention_days` — Delete renders in `generated/` older than this (default: 14; `0` keeps everything)
+- `ai_provider_conf` — Image bundle and, for ComfyUI, `image_workflow` (see [Image provider](#image-provider))
 - `notification_text_target_chars` — Maximum notification body length before truncation (default: 180)
 - `notification_text_truncate_suffix` — Suffix appended when text is truncated to the fixed width (default: `...`)
 - `notifications` — List of scheduled notification configs

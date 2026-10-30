@@ -28,9 +28,20 @@ class TestBuildNotificationPrompt:
             environment_variant=EnvironmentVariant(id="default", prompt_suffix=""),
         )
         assert "16:9" in prompt
-        assert "Time to catch the bus!" in prompt
         assert "children at a bus stop" in prompt
         assert "wall display" in prompt.lower()
+
+    def test_message_text_stays_out_when_a_scene_hint_is_given(self):
+        """The card shows the message; in the prompt Qwen would letter it into the image."""
+        prompt = build_notification_prompt(
+            notification_text="Time to catch the bus!",
+            prompt_hint="children at a bus stop",
+            image_class="BasicTextImage",
+            style_profile=StyleProfile(id="default", prompt_suffix=""),
+            environment_variant=EnvironmentVariant(id="default", prompt_suffix=""),
+        )
+        assert "Time to catch the bus!" not in prompt
+        assert '"' not in prompt
 
     def test_includes_class_modifier(self):
         prompt = build_notification_prompt(
@@ -108,6 +119,8 @@ class TestBuildNotificationPrompt:
             environment_variant=EnvironmentVariant(id="default", prompt_suffix=""),
         )
         assert "Test message" in prompt
+        assert "never as written words" in prompt
+        assert '"Test message"' not in prompt
         assert "Scene:" not in prompt
 
 

@@ -99,6 +99,11 @@ class Workflow:
     def max_images(self) -> int:
         return len(self.images)
 
+    @property
+    def text_to_image(self) -> bool:
+        """True for a graph that renders from the prompt alone (``images: []``)."""
+        return not self.images
+
     def load_graph(self) -> Dict[str, Any]:
         """Read and parse the graph JSON. Raises WorkflowRegistryError on failure."""
         try:
@@ -217,6 +222,12 @@ def _load(registry_path: Path) -> WorkflowRegistry:
             f"{registry_path}: default_workflow {default_workflow!r} is not a registered "
             f"workflow; registered workflows: {list(workflows)}"
         )
+    # The default is also every edit caller's fallback, so it has to take images.
+    if workflows[default_workflow].text_to_image:
+        raise WorkflowRegistryError(
+            f"{registry_path}: default_workflow {default_workflow!r} is a text-to-image "
+            f"graph; the default must take reference images"
+        )
 
     return WorkflowRegistry(
         default_workflow=default_workflow,
@@ -325,10 +336,13 @@ def _parse_workflow(name: str, body: Dict[str, Any], base_dir: Path) -> Workflow
         input=str(raw_output.get("input") or "filename_prefix").strip() or "filename_prefix",
     )
 
+    # An empty list declares a text-to-image graph; it has to be written out,
+    # so a forgotten key on an edit graph is still an error.
     raw_images = bindings.get("images")
-    if not isinstance(raw_images, list) or not raw_images:
+    if not isinstance(raw_images, list):
         raise WorkflowRegistryError(
-            f"workflow {name!r}: bindings.images must be a non-empty list (slot 0 is required)"
+            f"workflow {name!r}: bindings.images must be a list "
+            f"([] for a text-to-image graph; slot 0 is required otherwise)"
         )
     images: list[ImageSlot] = []
     for idx, raw_slot in enumerate(raw_images):
@@ -423,6 +437,20 @@ def _validate_against_graph(workflow: Workflow, graph: Dict[str, Any]) -> None:
     if workflow.seed is not None:
         _check_input(workflow.seed.node, workflow.seed.input, "bindings.seed")
     _check_input(workflow.output.node, workflow.output.input, "bindings.output")
+
+    # A text-to-image entry must not carry an unbound LoadImage: that is an edit
+    # graph whose slots were left out, and it would render from a stale file.
+    if workflow.text_to_image:
+        loaders = sorted(
+            node_id
+            for node_id, node in graph.items()
+            if isinstance(node, dict) and node.get("class_type") == "LoadImage"
+        )
+        if loaders:
+            raise WorkflowRegistryError(
+                f"{prefix}: bindings.images is empty (text-to-image), but the graph "
+                f"has LoadImage node(s) {loaders}"
+            )
 
     seen_slot_nodes: set[str] = set()
     for idx, slot in enumerate(workflow.images):

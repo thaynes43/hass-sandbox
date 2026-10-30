@@ -31,13 +31,15 @@ detection_summary_app
 
 ## Image generation
 
-Images are generated using the configured AI provider (OpenAI or Gemini). Each image is built from:
+Images are generated using the configured AI provider. Production renders them locally on ComfyUI with Qwen-Image-2.1 text-to-image, the same model that draws the detection summaries, so each image takes about 35 seconds and costs nothing. Each image is built from:
 
-- The notification text and scene hint
+- The scene hint (or, with no hint, the notification's theme as pictures only; the card prints the message text below the image)
 - A randomly selected **style profile** (cartoon, watercolor, pixel art, etc.)
 - A randomly selected **environment variant** (space, underwater, enchanted forest, etc.)
 
 Both layers are applied as secondary appearance/setting modifiers — subject content is always preserved.
+
+A failed render is retried, and after a restart the last idle image is shown until a new one is ready, so the card never sits black.
 
 ## Dashboard card
 

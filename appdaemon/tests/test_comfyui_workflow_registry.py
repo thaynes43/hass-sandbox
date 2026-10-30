@@ -22,6 +22,7 @@ from providers.ai_providers.comfyui.workflow_registry import (  # noqa: E402
 
 _QWEN21_3FRAME = "qwen-image-2.1-2609-25step-edit-3frame"
 _QWEN21_3FRAME_GPU1 = "qwen-image-2.1-2609-25step-edit-3frame-gpu1"
+_QWEN21_T2I_GPU1 = "qwen-image-2.1-2609-25step-t2i-gpu1"
 _QWEN21 = "qwen-image-2.1-2609-25step-edit"
 _LEGACY = "qwen-image-edit-2509-lightning4-legacy"
 _TUNED = "qwen-image-edit-2509-lightning4-tuned"
@@ -29,6 +30,7 @@ _TUNED_3FRAME = "qwen-image-edit-2509-lightning4-tuned-3frame"
 _SHIPPED_WORKFLOWS = (
     _QWEN21_3FRAME,
     _QWEN21_3FRAME_GPU1,
+    _QWEN21_T2I_GPU1,
     _QWEN21,
     _LEGACY,
     _TUNED,
@@ -160,7 +162,8 @@ def test_every_shipped_workflow_carries_its_operator_metadata() -> None:
     for name in registry.names:
         workflow = registry.get(name)
         assert isinstance(workflow.model_released, datetime.date)
-        assert workflow.added == datetime.date(2026, 9, 21)
+        expected_added = datetime.date(2026, 10, 30) if name == _QWEN21_T2I_GPU1 else datetime.date(2026, 9, 21)
+        assert workflow.added == expected_added
         assert workflow.description.strip()
         assert workflow.expect.strip()
         # The name carries the model's release yymm, per the documented
@@ -441,6 +444,46 @@ def test_gpu1_graph_only_adds_the_device_selection_nodes() -> None:
                 assert str(value[0]) in gpu1, f"{node_id} links to a missing node {value[0]!r}"
 
 
+def test_t2i_entry_renders_from_the_prompt_alone() -> None:
+    registry = load_workflow_registry()
+    t2i = registry.get(_QWEN21_T2I_GPU1)
+    assert t2i.text_to_image is True
+    assert t2i.max_images == 0
+    assert t2i.model == "qwen-image-2.1"
+    assert t2i.timeout_s == 900
+    assert t2i.required_models == _QWEN21_MODELS
+    assert "35 s" in t2i.expect
+    assert "quoted words" in t2i.expect
+
+    graph = t2i.load_graph()
+    assert not [n for n in graph.values() if n["class_type"] == "LoadImage"]
+    assert graph["12"]["class_type"] == "EmptyLatentImage"
+    assert graph["12"]["inputs"] == {"width": 1376, "height": 768, "batch_size": 1}
+    assert graph["7"]["inputs"]["latent_image"] == ["12", 0]
+    assert graph["6"]["inputs"]["clip"] == ["21", 0]
+    assert "vae" not in graph["6"]["inputs"]
+    assert not [k for k in graph["6"]["inputs"] if k.startswith("images.")]
+    for node_id, node in graph.items():
+        for value in node["inputs"].values():
+            if isinstance(value, list) and value:
+                assert str(value[0]) in graph, f"{node_id} links to a missing node {value[0]!r}"
+
+
+def test_t2i_entry_shares_the_loaded_model_with_the_gpu1_edit_graph() -> None:
+    """Identical loader, device and cache nodes are what let ComfyUI reuse the
+    weights the detection renders already loaded; any drift loads a second copy."""
+    registry = load_workflow_registry()
+    t2i = registry.get(_QWEN21_T2I_GPU1).load_graph()
+    edit = registry.get(_QWEN21_3FRAME_GPU1).load_graph()
+    for node_id in ("2", "3", "4", "5", "20", "21", "22", "8"):
+        assert t2i[node_id] == edit[node_id], f"node {node_id} drifted from the gpu1 edit graph"
+    sampler = dict(t2i["7"]["inputs"])
+    edit_sampler = dict(edit["7"]["inputs"])
+    assert sampler.pop("latent_image") == ["12", 0]
+    edit_sampler.pop("latent_image")
+    assert sampler == edit_sampler
+
+
 def test_the_registry_default_stays_gpu_agnostic() -> None:
     """The default is the FALLBACK target, so it must not name a card.
 
@@ -717,12 +760,61 @@ def test_output_binding_must_be_a_mapping(tmp_path: Path) -> None:
     )
 
 
-def test_images_must_be_non_empty(tmp_path: Path) -> None:
+def test_images_must_be_written_out(tmp_path: Path) -> None:
+    """A forgotten key must not quietly turn an edit graph into text-to-image."""
     workflow = _minimal_workflow()
-    workflow["bindings"]["images"] = []
-    assert "slot 0 is required" in _load_expecting_error(
+    del workflow["bindings"]["images"]
+    assert "bindings.images must be a list" in _load_expecting_error(
         _write_registry(tmp_path, workflow=workflow)
     )
+
+
+def test_empty_images_on_a_graph_with_load_image_nodes_raises(tmp_path: Path) -> None:
+    workflow = _minimal_workflow()
+    workflow["bindings"]["images"] = []
+    message = _load_expecting_error(_write_registry(tmp_path, workflow=workflow))
+    assert "text-to-image" in message
+    assert "['load0', 'load1']" in message
+
+
+def _text_to_image_graph() -> Dict[str, Any]:
+    graph = _minimal_graph()
+    for node_id in ("load0", "load1"):
+        del graph[node_id]
+    for node_id in ("pos", "neg"):
+        graph[node_id]["inputs"] = {"prompt": ""}
+    return graph
+
+
+def _text_to_image_workflow() -> Dict[str, Any]:
+    workflow = _minimal_workflow()
+    workflow["bindings"]["images"] = []
+    return workflow
+
+
+def test_text_to_image_workflow_round_trip(tmp_path: Path) -> None:
+    doc_path = _write_registry(tmp_path, graph=_text_to_image_graph(), default_workflow=None)
+    doc = yaml.safe_load(doc_path.read_text(encoding="utf-8"))
+    doc["workflows"] = {"edit": _minimal_workflow(), "t2i": _text_to_image_workflow()}
+    doc["workflows"]["edit"]["graph"] = "edit.json"
+    (tmp_path / "edit.json").write_text(json.dumps(_minimal_graph()), encoding="utf-8")
+    doc["default_workflow"] = "edit"
+    doc_path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+
+    registry = load_workflow_registry(doc_path)
+    t2i = registry.get("t2i")
+    assert t2i.text_to_image is True
+    assert t2i.max_images == 0
+    assert t2i.images == ()
+    assert registry.get("edit").text_to_image is False
+
+
+def test_default_workflow_cannot_be_text_to_image(tmp_path: Path) -> None:
+    """The default is every edit caller's fallback, so it has to take frames."""
+    message = _load_expecting_error(
+        _write_registry(tmp_path, workflow=_text_to_image_workflow(), graph=_text_to_image_graph())
+    )
+    assert "default_workflow 'w1' is a text-to-image graph" in message
 
 
 def test_unknown_image_slot_node_raises(tmp_path: Path) -> None:

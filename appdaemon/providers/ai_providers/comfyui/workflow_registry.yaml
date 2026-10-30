@@ -29,6 +29,8 @@
 #   graph           the API-format workflow JSON, relative to this file
 #   timeout_s       render budget, seconds
 #   bindings        prompt / negative_prompt / seed / output / images
+#                   (`images: []` declares a text-to-image graph: it takes no
+#                   reference frames and must contain no LoadImage node)
 #
 # Validation runs at load time (workflow_registry.py): the dates must parse,
 # every node id and input name referenced must exist in the graph, every
@@ -110,6 +112,32 @@ workflows:
         - node: "11"
           input: image
           unlink: ["6.images.image_3"]
+
+  qwen-image-2.1-2609-25step-t2i-gpu1:
+    model: qwen-image-2.1
+    model_released: 2026-09-20
+    added: 2026-10-30
+    description: >-
+      Qwen-Image-2.1 text-to-image from the official ComfyUI template's
+      settings (25 steps, cfg 1, euler/simple), no reference frames, with a
+      1376x768 (16:9) empty latent for the wall display. Its loader and
+      device nodes are copied from the `-gpu1` edit entry, so ComfyUI reuses
+      the model the detection summaries already loaded instead of loading a
+      second copy. Used by dashboard_notify for its idle and scheduled images.
+    expect: >-
+      A painterly 1376x768 PNG in about 35 s on the warm model (measured
+      2026-10-30 on the in-cluster RTX 2000 Ada). Qwen writes any quoted
+      words into the picture, so callers keep message text out of the prompt.
+      If this graph is rejected there is no text-to-image fallback; the
+      provider raises and the caller retries later.
+    graph: workflows/qwen_image_2_1_t2i_gpu1_API.json
+    timeout_s: 900
+    bindings:
+      prompt: {node: "6", input: prompt}
+      negative_prompt: {node: "6", input: negative_prompt}
+      seed: {node: "7", input: seed}
+      output: {node: "9"}
+      images: []
 
   qwen-image-2.1-2609-25step-edit:
     model: qwen-image-2.1

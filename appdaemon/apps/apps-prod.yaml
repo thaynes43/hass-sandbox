@@ -493,8 +493,13 @@ dashboard_notify:
   no_notification_refresh_s: 3600
   notification_text_target_chars: 180
   notification_text_truncate_suffix: "..."
+  generation_retry_s: 300
+  generated_retention_days: 14
   ai_provider_conf:
-    image: gemini-default
+    # Local Qwen-Image-2.1 text-to-image on ComfyUI, the model the detection
+    # summaries use. Was gemini-default until its credits ran out (402, 2026-10-16).
+    image: comfyui-qwen-edit
+    image_workflow: qwen-image-2.1-2609-25step-t2i-gpu1
   notifications:
     - id: school_bus_pickup
       class: BasicTextImage

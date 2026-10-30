@@ -52,12 +52,16 @@ def build_notification_prompt(
         "",
     ]
 
+    # The card prints the message under the image. Quoting it here makes
+    # Qwen-Image letter it into the picture as well (2026-10-30), so with a
+    # scene hint the message stays out of the prompt, and without one it is
+    # given as a theme to draw, never as words to write.
     if prompt_hint:
         lines.append(f"Scene: {prompt_hint}")
-        lines.append("")
-
-    lines.append(f'The notification message is: "{notification_text}"')
-    lines.append("Incorporate the theme of this message into the illustration visually.")
+    else:
+        lines.append(
+            f"Theme to show with pictures only, never as written words: {notification_text}"
+        )
     lines.append("")
 
     modifier = CLASS_MODIFIERS.get(image_class, CLASS_MODIFIERS["BasicTextImage"])
@@ -65,7 +69,7 @@ def build_notification_prompt(
     lines.append("")
 
     lines.append("Content safety:")
-    lines.append("- Do NOT include any text, words, or letters in the image.")
+    lines.append("- Do NOT include any text, words, or letters in the image, not even on signs.")
     lines.append("- Do NOT reproduce any branded, trademarked, or copyrighted content.")
     lines.append("- Keep the illustration family-friendly and appropriate for all ages.")
 
