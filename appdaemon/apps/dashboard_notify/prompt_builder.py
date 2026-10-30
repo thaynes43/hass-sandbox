@@ -91,7 +91,7 @@ def build_notification_prompt(
     if environment_variant and environment_variant.prompt_suffix:
         prompt = (
             f"{prompt}\n\n"
-            f"Environment/setting (modify background and setting only — all subjects and notification theme must remain clearly present):\n"
+            f"Environment/setting (modify background and setting only — all subjects and the scene above must remain clearly present):\n"
             f"{environment_variant.prompt_suffix}"
         )
 

@@ -126,8 +126,8 @@ workflows:
       second copy. Used by dashboard_notify for its idle and scheduled images.
     expect: >-
       A painterly 1376x768 PNG in about 35 s on the warm model (measured
-      2026-10-30 on the in-cluster RTX 2000 Ada). Qwen writes any quoted
-      words into the picture, so callers keep message text out of the prompt.
+      2026-10-30 on the in-cluster RTX 2000 Ada). Qwen letters quoted words
+      into the picture, so callers should not quote text they do not want drawn.
       If this graph is rejected there is no text-to-image fallback; the
       provider raises and the caller retries later.
     graph: workflows/qwen_image_2_1_t2i_gpu1_API.json

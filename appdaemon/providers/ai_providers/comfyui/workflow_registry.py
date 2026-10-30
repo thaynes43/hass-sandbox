@@ -438,18 +438,19 @@ def _validate_against_graph(workflow: Workflow, graph: Dict[str, Any]) -> None:
         _check_input(workflow.seed.node, workflow.seed.input, "bindings.seed")
     _check_input(workflow.output.node, workflow.output.input, "bindings.output")
 
-    # A text-to-image entry must not carry an unbound LoadImage: that is an edit
-    # graph whose slots were left out, and it would render from a stale file.
+    # A text-to-image entry must not carry an unbound image loader (LoadImage,
+    # LoadImageMask, LoadImageOutput, ...): that is an edit graph whose slots
+    # were left out, and it would render from a stale file.
     if workflow.text_to_image:
         loaders = sorted(
             node_id
             for node_id, node in graph.items()
-            if isinstance(node, dict) and node.get("class_type") == "LoadImage"
+            if isinstance(node, dict) and str(node.get("class_type") or "").startswith("LoadImage")
         )
         if loaders:
             raise WorkflowRegistryError(
                 f"{prefix}: bindings.images is empty (text-to-image), but the graph "
-                f"has LoadImage node(s) {loaders}"
+                f"has image loader node(s) {loaders}"
             )
 
     seen_slot_nodes: set[str] = set()

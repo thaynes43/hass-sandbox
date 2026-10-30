@@ -39,7 +39,7 @@ Images are generated using the configured AI provider. Production renders them l
 
 Both layers are applied as secondary appearance/setting modifiers — subject content is always preserved.
 
-A failed render is retried, and after a restart the last idle image is shown until a new one is ready, so the card never sits black.
+A failed render is retried, and after a restart the last idle image already on disk is shown until a new one is ready, so a restart or a provider outage does not blank the card.
 
 ## Dashboard card
 

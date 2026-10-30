@@ -110,7 +110,11 @@ the message below the image, so the prompt builder leaves the message text out w
   newest `no_notifications_*.png` already on disk is shown until a fresh one renders,
   so a restart never blanks the card.
 - **Scheduled notifications:** a failed render is retried every `generation_retry_s`
-  while its schedule window is still open.
+  while its schedule window is still open. A render that finishes after the window
+  closed is discarded rather than shown for a full TTL.
+- **Provider check:** every render here passes no input image, so a provider that
+  cannot render from a prompt alone (a ComfyUI bundle without `image_workflow`) is
+  refused at startup with an ERROR instead of failing every render.
 - **Retention:** `generated/` keeps every render, so files older than
   `generated_retention_days` are deleted at startup and daily. Images on screen are kept.
 

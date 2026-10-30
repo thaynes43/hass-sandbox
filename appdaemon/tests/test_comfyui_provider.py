@@ -421,6 +421,29 @@ def test_rejected_text_to_image_does_not_fall_back_to_an_edit_graph(tmp_path: Pa
     assert fake.call_count == 1
 
 
+def test_rejected_text_to_image_with_frames_still_does_not_fall_back(tmp_path: Path) -> None:
+    """The edit default would silently return an edit of frames meant as nothing."""
+    fake = _Urlopen([_http_error(400, _DEVICE_NOT_IN_LIST_BODY)])
+    provider = _make_provider(workflow_name=_QWEN21_T2I_GPU1, fallback_workflow_name=_QWEN21_3FRAME)
+    with patch("urllib.request.urlopen", new=fake):
+        with pytest.raises(ComfyUIWorkflowRejectedError):
+            provider.edit_image(
+                input_image_paths=_inputs(tmp_path, 1), prompt="p", output_image_path=str(tmp_path / "o.png")
+            )
+    assert fake.call_count == 1
+
+
+def test_text_to_image_render_does_not_take_the_upload_lock(tmp_path: Path) -> None:
+    fake = _Urlopen(
+        [_json_response({"prompt_id": "pid-t2i"}), _history_response("pid-t2i"), _view_response()]
+    )
+    provider = _make_provider(workflow_name=_QWEN21_T2I_GPU1)
+    with patch(f"{_PROVIDER_MODULE}._upload_lock") as lock:
+        with patch("urllib.request.urlopen", new=fake):
+            provider.edit_image(input_image_paths=[], prompt="p", output_image_path=str(tmp_path / "o.png"))
+    lock.assert_not_called()
+
+
 def test_requires_existing_inputs(tmp_path: Path) -> None:
     provider = _make_provider()
     with pytest.raises(ExternalImageGenError) as exc_info:

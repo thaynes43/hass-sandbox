@@ -10,6 +10,7 @@ AppDaemon config; everything else follows from it.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import json
 import logging
@@ -386,9 +387,10 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         except ComfyUIWorkflowRejectedError as exc:
             if not fallback or fallback == requested:
                 raise
-            if not in_paths and not self._registry.get(fallback).text_to_image:
-                # The fallback is an edit graph and there is no frame to give
-                # it; a retry could only fail on "input_image_paths is required".
+            if self._registry.get(fallback).text_to_image != self._registry.get(requested).text_to_image:
+                # Never cross between text-to-image and edit: an edit default
+                # has no frame to work from, or would quietly return an edit of
+                # frames a text-to-image caller never meant as references.
                 raise
             logger.warning(
                 "ComfyUI workflow %r was rejected (%s); retrying once with the fallback "
@@ -434,7 +436,9 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
 
         input_dimensions = self._check_primary_input(used_paths[0]) if used_paths else None
 
-        with _upload_lock(namespace):
+        # The lock only protects uploaded inputs; a text-to-image render has
+        # none and must not queue behind (or hold up) another render.
+        with _upload_lock(namespace) if used_paths else contextlib.nullcontext():
             uploaded_names: List[str] = []
             for slot_idx, path in enumerate(used_paths):
                 uploaded_names.append(

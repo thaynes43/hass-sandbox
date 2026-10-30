@@ -1525,6 +1525,31 @@ class TestRetriesAndRestore:
             app._request_placeholder_generation(time.time())
         start.assert_not_called()
 
+    def test_startup_with_a_fresh_restored_placeholder_schedules_its_refresh(self):
+        """Otherwise the restored image would never refresh until a notification expired."""
+        app = _make_app({"no_notification_refresh_s": 3600})
+        app.initialize()
+        self._write_render(app, "no_notifications_100.png", age_s=1200)
+        app.run_in.reset_mock()
+
+        app._startup_reconcile({})
+
+        refreshes = [c for c in app.run_in.call_args_list if c[0][0] == app._on_placeholder_refresh]
+        assert len(refreshes) == 1
+        assert 2390 <= refreshes[0][0][1] <= 2400
+
+    def test_startup_with_a_stale_restored_placeholder_renders_now(self):
+        app = _make_app({"no_notification_refresh_s": 3600, "notifications": []})
+        app.initialize()
+        self._write_render(app, "no_notifications_100.png", age_s=7200)
+        app.run_in.reset_mock()
+
+        with patch.object(app, "_start_generation_thread") as start:
+            app._startup_reconcile({})
+
+        start.assert_called_once()
+        assert not [c for c in app.run_in.call_args_list if c[0][0] == app._on_placeholder_refresh]
+
     def test_nothing_to_restore_leaves_the_placeholder_unset(self):
         app = _make_app()
         app.initialize()
@@ -1606,3 +1631,66 @@ class TestDetectionLookup:
         app = self._app()
         self._publish(app, "../../etc")
         assert app._manager.count() == 0
+
+
+class TestReviewFollowUps:
+    def test_render_finishing_after_its_window_is_discarded(self):
+        app = _make_app()
+        app.initialize()
+        app._active_generations.add("test_notif")
+        now = time.time()
+        with patch.object(app, "_is_schedule_active", return_value=False):
+            with patch.object(app, "_maybe_request_placeholder") as ph:
+                app._complete_notification_generation({"result": {
+                    "success": True, "nid": "test_notif", "notification_class": "BasicTextImage",
+                    "text": "Late", "output_path": "/p/l.png", "staged_path": "/s/l.png",
+                    "local_url": "/local/l.png", "now": now, "ttl_s": 3600,
+                }})
+        assert not app._manager.has("test_notif")
+        ph.assert_called_once()
+
+    def test_failed_notification_keeps_the_idle_image_current(self):
+        app = _make_app()
+        app.initialize()
+        with patch.object(app, "_is_schedule_active", return_value=False):
+            with patch.object(app, "_maybe_request_placeholder") as ph:
+                app._complete_notification_generation({"result": {
+                    "success": False, "nid": "test_notif", "error": "down",
+                }})
+        ph.assert_called_once()
+
+    def test_placeholder_failures_keep_a_single_pending_timer(self):
+        app = _make_app()
+        app.initialize()
+        app.timer_running = MagicMock(return_value=True)
+        app.run_in = MagicMock(side_effect=["h1", "h2", "h3"])
+        for _ in range(3):
+            app._complete_placeholder_generation({"result": {"success": False, "error": "down"}})
+        assert [c[0][0] for c in app.cancel_timer.call_args_list] == ["h1", "h2"]
+        assert app._placeholder_timer == "h3"
+
+    def test_edit_only_provider_is_refused_at_startup(self):
+        app = _make_app()
+        provider = MagicMock()
+        provider.capabilities.supports_text_to_image = False
+        with patch("dashboard_notify.dashboard_notify_app.build_image_provider", return_value=provider):
+            app.initialize()
+        assert app._image_provider is None
+        assert any(c.kwargs.get("level") == "ERROR" for c in app.log.call_args_list)
+
+    def test_backfill_does_not_walk_archives(self):
+        app = _make_app({"detection_summary_hook": {"enabled": True, "bundle_keys": ["garage"]}})
+        app.initialize()
+        root = os.path.join(app._media_fs_root, "detection-summary", "garage", "runs")
+        os.makedirs(os.path.join(root, "archive", "2026-09", "old"))
+        walked = []
+        real_walk = os.walk
+
+        def spy(top, *a, **kw):
+            for entry in real_walk(top, *a, **kw):
+                walked.append(entry[0])
+                yield entry
+
+        with patch("dashboard_notify.dashboard_notify_app.os.walk", side_effect=spy):
+            app._backfill_detection_bundles(time.time())
+        assert walked and not [w for w in walked if "archive" in w]

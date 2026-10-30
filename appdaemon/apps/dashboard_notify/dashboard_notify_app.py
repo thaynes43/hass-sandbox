@@ -159,6 +159,7 @@ class DashboardNotify(hass.Hass):
         self._placeholder_url: str = ""
         self._placeholder_path: str = ""
         self._placeholder_failures: int = 0
+        self._placeholder_timer: Optional[Any] = None
         self._active_generations: set[str] = set()
 
         # Schedule handles: {nid: {"start": handle_or_None, "end": handle_or_None}}
@@ -172,6 +173,16 @@ class DashboardNotify(hass.Hass):
             img_cfg = provider_config_from_appdaemon_args(cfg)
             self._image_provider = build_image_provider(img_cfg)
             self.log("Image provider: %s", self._image_provider.name)
+            # Every render here passes no input image; an edit-only provider
+            # (a ComfyUI bundle without image_workflow) would fail each one.
+            if not self._image_provider.capabilities.supports_text_to_image:
+                self.log(
+                    "Image provider %s cannot render from a prompt alone; set "
+                    "ai_provider_conf.image_workflow to a text-to-image workflow. "
+                    "Image generation is disabled.",
+                    self._image_provider.name, level="ERROR",
+                )
+                self._image_provider = None
         except Exception as e:
             self.log("Failed to build image provider: %s", e, level="WARNING")
             self._image_provider = None
@@ -309,6 +320,13 @@ class DashboardNotify(hass.Hass):
         # never leaves the card black.
         if self._restore_last_placeholder():
             self.call_service("shell_command/" + self._stage_shell_command)
+            self._publish_state()
+            # A fresh restored image makes the request below return early, and
+            # only a completed render schedules the next refresh, so start the
+            # refresh chain here from the restored image's age.
+            delay = self._no_notification_refresh_s - (now - self._placeholder_generated_at)
+            if delay > 0:
+                self._schedule_placeholder_refresh(delay)
         self._prune_generated()
 
         # Evaluate scheduled notifications
@@ -419,6 +437,8 @@ class DashboardNotify(hass.Hass):
         # Collect all eligible (bundle_key, created_at, run_dir) tuples
         candidates: dict[str, list[tuple[float, str, str]]] = {}  # key -> [(created, run_id, run_dir)]
         for dirpath, dirnames, filenames in os.walk(ds_root):
+            # Archived runs are past any TTL; walking them cost seconds per month.
+            dirnames[:] = [d for d in dirnames if d != "archive"]
             if "summary.json" not in filenames or "generated.png" not in filenames:
                 continue
             summary_path = os.path.join(dirpath, "summary.json")
@@ -841,11 +861,23 @@ class DashboardNotify(hass.Hass):
                     "Notification generation failed for '%s': %s",
                     nid, result.get("error"), level="WARNING"
                 )
+            # Nothing new is coming for this slot; keep the idle image current.
+            self._maybe_request_placeholder(time.time())
             return
 
         # Stale-job guard: if already present, skip
         if self._manager.has(nid):
             self.log("Notification '%s' already exists (stale completion), skipping", nid)
+            return
+
+        # A slow render or a retry can finish after the end boundary already
+        # ran; adding it then would show the notification for a full TTL.
+        config = self._notification_config(nid)
+        if config and config.get("schedule") and not self._is_schedule_active(
+            config.get("schedule"), time.time()
+        ):
+            self.log("Notification '%s' rendered after its window closed, discarding", nid)
+            self._maybe_request_placeholder(time.time())
             return
 
         now = time.time()
@@ -979,7 +1011,7 @@ class DashboardNotify(hass.Hass):
                 "Placeholder generation failed (%d in a row): %s; retrying in %.0fs",
                 self._placeholder_failures, result.get("error"), delay, level="WARNING"
             )
-            self.run_in(self._on_placeholder_refresh, delay)
+            self._schedule_placeholder_refresh(delay)
             return
         self._placeholder_failures = 0
 
@@ -1002,11 +1034,22 @@ class DashboardNotify(hass.Hass):
         now = time.time()
         next_refresh_delay = self._no_notification_refresh_s - (now - self._placeholder_generated_at)
         next_refresh_delay = max(60.0, next_refresh_delay)
-        self.run_in(self._on_placeholder_refresh, next_refresh_delay)
+        self._schedule_placeholder_refresh(next_refresh_delay)
         self.log("Placeholder refresh scheduled in %.0fs", next_refresh_delay)
+
+    def _schedule_placeholder_refresh(self, delay: float) -> None:
+        """Keep exactly one pending refresh/retry, so failures cannot stack timers."""
+        if self._placeholder_timer is not None:
+            try:
+                if self.timer_running(self._placeholder_timer):
+                    self.cancel_timer(self._placeholder_timer)
+            except Exception:
+                pass
+        self._placeholder_timer = self.run_in(self._on_placeholder_refresh, max(60.0, delay))
 
     def _on_placeholder_refresh(self, kwargs: Any) -> None:
         """Fire placeholder regeneration if we're still in idle state."""
+        self._placeholder_timer = None
         now = time.time()
         if self._manager.count() == 0:
             self._request_placeholder_generation(now)

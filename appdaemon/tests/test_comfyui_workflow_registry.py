@@ -777,6 +777,15 @@ def test_empty_images_on_a_graph_with_load_image_nodes_raises(tmp_path: Path) ->
     assert "['load0', 'load1']" in message
 
 
+def test_empty_images_rejects_any_image_loader(tmp_path: Path) -> None:
+    graph = _text_to_image_graph()
+    graph["mask"] = {"inputs": {"image": "m.png", "channel": "alpha"}, "class_type": "LoadImageMask"}
+    workflow = _minimal_workflow()
+    workflow["bindings"]["images"] = []
+    message = _load_expecting_error(_write_registry(tmp_path, workflow=workflow, graph=graph))
+    assert "image loader node(s) ['mask']" in message
+
+
 def _text_to_image_graph() -> Dict[str, Any]:
     graph = _minimal_graph()
     for node_id in ("load0", "load1"):

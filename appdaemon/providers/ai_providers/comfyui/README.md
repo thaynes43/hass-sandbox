@@ -19,8 +19,8 @@ switch and nothing to click.
 - Text-to-image through a workflow declared with `images: []`: no upload, and
   `capabilities.supports_text_to_image` is true for a provider on it
 - One-shot fallback to the registry default when a workflow is rejected. A
-  text-to-image render has no frame to give that edit graph, so it does not
-  fall back; the caller retries later
+  text-to-image render never falls back to an edit graph (or the reverse);
+  the caller retries later
 
 ## Limitations
 
@@ -40,7 +40,7 @@ expect from it.
 |---|---|---|---|---|
 | `qwen-image-2.1-2609-25step-edit-3frame` **(registry default / fallback)** | 2026-09-20 | 2026-09-21 | up to 3 | Same clean, painterly result as the single-frame entry, with the extra frames used for a subject the first one misses. About 16 GB of VRAM; roughly 50 s per image on a cool 3090, 2-3x that when the card is thermally throttled. |
 | `qwen-image-2.1-2609-25step-edit-3frame-gpu1` **(what the bundle runs)** | 2026-09-20 | 2026-09-21 | up to 3 | Identical output to the plain three-frame entry. About 55-60 s per image even back-to-back, where the first GPU drops to ~115 s once it heats up. The first render after a ComfyUI restart or after switching cards pays a one-off model load of a few minutes. |
-| `qwen-image-2.1-2609-25step-t2i-gpu1` **(dashboard_notify)** | 2026-09-20 | 2026-10-30 | none | A painterly 1376x768 PNG in about 35 s on the warm model (measured 2026-10-30 on the in-cluster RTX 2000 Ada). Qwen writes any quoted words into the picture, so callers keep message text out of the prompt. If this graph is rejected there is no text-to-image fallback; the provider raises and the caller retries later. |
+| `qwen-image-2.1-2609-25step-t2i-gpu1` **(dashboard_notify)** | 2026-09-20 | 2026-10-30 | none | A painterly 1376x768 PNG in about 35 s on the warm model (measured 2026-10-30 on the in-cluster RTX 2000 Ada). Qwen letters quoted words into the picture, so callers should not quote text they do not want drawn. If this graph is rejected there is no text-to-image fallback; the provider raises and the caller retries later. |
 | `qwen-image-2.1-2609-25step-edit` | 2026-09-20 | 2026-09-21 | 1 | Clean, painterly restyles that keep the scene, people and vehicles where they are; natural colour, no burnt shadows. About 16 GB of VRAM and roughly 45 s per image on a cool 3090, 2-3x that when thermally throttled. |
 | `qwen-image-edit-2509-lightning4-legacy` | 2025-09-22 | 2026-09-21 | 1 | What production sent until 2026-09: strong stylisation but over-saturated colour and crushed shadows, because cfg 3.5 fights the 4-step LoRA. About 40-50 s per image. |
 | `qwen-image-edit-2509-lightning4-tuned` | 2025-09-22 | 2026-09-21 | 1 | Same model at the settings it was made for (cfg 1, 1 MP): clean colour, subject and lighting preserved. About 40-50 s per image. |
