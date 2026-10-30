@@ -16,12 +16,16 @@ switch and nothing to click.
   bound; unused slots are pruned from the graph
 - `capabilities.max_input_images` — the selected workflow's slot count, so a
   caller can trim before it renders (see below)
-- One-shot fallback to the registry default when a workflow is rejected
+- Text-to-image through a workflow declared with `images: []`: no upload, and
+  `capabilities.supports_text_to_image` is true for a provider on it
+- One-shot fallback to the registry default when a workflow is rejected. A
+  text-to-image render never falls back to an edit graph (or the reverse);
+  the caller retries later
 
 ## Limitations
 
 - No text-only or image-to-text structured output
-- No text-to-image: every workflow expects at least one reference image
+- One text-to-image workflow, with a fixed 1376x768 (16:9) canvas
 - The caller cannot pass ComfyUI parameters directly — anything tunable is a
   registry `override`, which keeps the graph validated at load time
 
@@ -36,6 +40,7 @@ expect from it.
 |---|---|---|---|---|
 | `qwen-image-2.1-2609-25step-edit-3frame` **(registry default / fallback)** | 2026-09-20 | 2026-09-21 | up to 3 | Same clean, painterly result as the single-frame entry, with the extra frames used for a subject the first one misses. About 16 GB of VRAM; roughly 50 s per image on a cool 3090, 2-3x that when the card is thermally throttled. |
 | `qwen-image-2.1-2609-25step-edit-3frame-gpu1` **(what the bundle runs)** | 2026-09-20 | 2026-09-21 | up to 3 | Identical output to the plain three-frame entry. About 55-60 s per image even back-to-back, where the first GPU drops to ~115 s once it heats up. The first render after a ComfyUI restart or after switching cards pays a one-off model load of a few minutes. |
+| `qwen-image-2.1-2609-25step-t2i-gpu1` **(dashboard_notify)** | 2026-09-20 | 2026-10-30 | none | A painterly 1376x768 PNG in about 35 s on the warm model (measured 2026-10-30 on the in-cluster RTX 2000 Ada). Qwen letters quoted words into the picture, so callers should not quote text they do not want drawn. If this graph is rejected there is no text-to-image fallback; the provider raises and the caller retries later. |
 | `qwen-image-2.1-2609-25step-edit` | 2026-09-20 | 2026-09-21 | 1 | Clean, painterly restyles that keep the scene, people and vehicles where they are; natural colour, no burnt shadows. About 16 GB of VRAM and roughly 45 s per image on a cool 3090, 2-3x that when thermally throttled. |
 | `qwen-image-edit-2509-lightning4-legacy` | 2025-09-22 | 2026-09-21 | 1 | What production sent until 2026-09: strong stylisation but over-saturated colour and crushed shadows, because cfg 3.5 fights the 4-step LoRA. About 40-50 s per image. |
 | `qwen-image-edit-2509-lightning4-tuned` | 2025-09-22 | 2026-09-21 | 1 | Same model at the settings it was made for (cfg 1, 1 MP): clean colour, subject and lighting preserved. About 40-50 s per image. |
@@ -103,7 +108,15 @@ slot: `…-3frame-gpu1` is the three-frame graph pinned to the second card.
 
 ### The `gpu1` variant
 
-The ComfyUI host has two RTX 3090s, and ComfyUI puts everything on `gpu:0`.
+> **Current host (2026-10-30):** ComfyUI now runs in-cluster as `ai/comfyui-0`
+> on one RTX 2000 Ada (16 GB), and its device nodes offer only `default` and
+> `cpu`. ComfyUI 0.39's `SelectModelDevice` passes a GPU that does not exist
+> through to the only card instead of failing, and the `-gpu1` graphs render
+> there: detection renders took about 51 s on 2026-10-29 with no rejection and
+> no fallback. The two-3090 description and the `value_not_in_list` rejection
+> below describe the earlier host. They still apply if a second card returns.
+
+The earlier ComfyUI host had two RTX 3090s, and ComfyUI put everything on `gpu:0`.
 That card sits in the hotter slot: a cool render takes 43 s, but back-to-back
 work throttles it to about 115 s. `gpu:1` throttles far more gently — the same
 graph holds 55-60 s render after render, which is why the bundle points there.
@@ -307,7 +320,7 @@ the three `qwen-image-edit-2509-*` workflows
        negative_prompt: {node: "115:110", input: prompt}   # optional; set to ""
        seed: {node: "115:3", input: seed}                  # optional; per-run
        output: {node: "60"}                                # SaveImage node
-       images:                                             # ordered; slot 0 required
+       images:                                             # ordered; slot 0 required, or [] for text-to-image
          - {node: "78", input: image}
          - node: "120"
            input: image
@@ -319,8 +332,11 @@ the three `qwen-image-edit-2509-*` workflows
 3. Run the tests. Validation is strict and happens at load: the dates must
    parse as `YYYY-MM-DD`, every node id and input name must exist in the graph,
    every `unlink` target must currently link to that slot's node, and
-   `default_workflow` must be registered. A typo is a startup error, never a
-   silent no-op against a live ComfyUI.
+   `default_workflow` must be registered. A text-to-image entry
+   (`images: []`) may not contain any `LoadImage*` node, and
+   `default_workflow` may not be text-to-image, because it is every edit
+   caller's fallback. A typo is a startup error, never a silent no-op against a
+   live ComfyUI.
 4. Point a bundle or an app at the new name and ship it.
 
 `unlink` is what makes a multi-slot graph safe with fewer images: when slot N
@@ -420,8 +436,10 @@ and `workflow_fallback_reason`.
 That difference is live in the shipped config: the bundle asks for
 `qwen-image-2.1-2609-25step-edit-3frame-gpu1` while the registry default — and
 so the fallback — is the GPU-agnostic `qwen-image-2.1-2609-25step-edit-3frame`.
-A `gpu:1` that has left the bus is a `value_not_in_list` 400 on `device`, and
-the retry renders on `gpu:0` instead of the zone going dark.
+On the earlier two-GPU host, a `gpu:1` that had left the bus was a
+`value_not_in_list` 400 on `device`, and the retry rendered on `gpu:0` instead
+of the zone going dark. The current single-GPU host passes the pin through
+instead (see [The `gpu1` variant](#the-gpu1-variant)).
 
 Everything else raises a plain `ExternalImageGenError` and does **not** fall
 back:

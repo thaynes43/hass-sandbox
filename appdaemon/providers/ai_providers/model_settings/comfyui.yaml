@@ -31,6 +31,13 @@ bundles:
       # what a rejected graph falls back TO — if `gpu:1` ever leaves the bus,
       # ComfyUI 400s this graph and the fallback renders on gpu:0 instead.
       # To go back, set this to qwen-image-2.1-2609-25step-edit-3frame.
+      # Since ComfyUI moved in-cluster (ai/comfyui-0, one RTX 2000 Ada) there is
+      # no gpu:1. ComfyUI >= 0.39 passes a missing device through to the only
+      # card instead of rejecting the graph, so this still renders (~51 s,
+      # 2026-10-29) and no fallback happens.
+      # dashboard_notify uses this bundle too, with `image_workflow:
+      # qwen-image-2.1-2609-25step-t2i-gpu1`, a text-to-image graph built on the
+      # same loader and device nodes so both share one loaded model.
       workflow: qwen-image-2.1-2609-25step-edit-3frame-gpu1
       # Warn when an input image is below this total pixel count.
       # 921600 = 1280*720 (expected medium-channel minimum).

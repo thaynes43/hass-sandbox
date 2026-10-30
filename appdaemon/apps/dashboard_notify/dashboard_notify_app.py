@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import shutil
@@ -124,6 +125,15 @@ class DashboardNotify(hass.Hass):
         self._notification_text_truncate_suffix: str = str(
             cfg.get("notification_text_truncate_suffix", "...")
         )
+        # A failed render is retried after this delay; the idle placeholder
+        # doubles it per consecutive failure, up to no_notification_refresh_s.
+        self._generation_retry_s: float = max(
+            60.0, _safe_float(cfg.get("generation_retry_s"), 300.0)
+        )
+        # Renders older than this are deleted from generated/ (0 keeps all).
+        self._generated_retention_days: float = max(
+            0.0, _safe_float(cfg.get("generated_retention_days"), 14.0)
+        )
 
         # HA credentials for provisioning
         self._ha_url: str = str(resolve_arg_secret(cfg, "ha_url", default=""))
@@ -148,6 +158,8 @@ class DashboardNotify(hass.Hass):
         self._placeholder_generated_at: float = 0.0
         self._placeholder_url: str = ""
         self._placeholder_path: str = ""
+        self._placeholder_failures: int = 0
+        self._placeholder_timer: Optional[Any] = None
         self._active_generations: set[str] = set()
 
         # Schedule handles: {nid: {"start": handle_or_None, "end": handle_or_None}}
@@ -161,6 +173,16 @@ class DashboardNotify(hass.Hass):
             img_cfg = provider_config_from_appdaemon_args(cfg)
             self._image_provider = build_image_provider(img_cfg)
             self.log("Image provider: %s", self._image_provider.name)
+            # Every render here passes no input image; an edit-only provider
+            # (a ComfyUI bundle without image_workflow) would fail each one.
+            if not self._image_provider.capabilities.supports_text_to_image:
+                self.log(
+                    "Image provider %s cannot render from a prompt alone; set "
+                    "ai_provider_conf.image_workflow to a text-to-image workflow. "
+                    "Image generation is disabled.",
+                    self._image_provider.name, level="ERROR",
+                )
+                self._image_provider = None
         except Exception as e:
             self.log("Failed to build image provider: %s", e, level="WARNING")
             self._image_provider = None
@@ -177,6 +199,9 @@ class DashboardNotify(hass.Hass):
 
         # Carousel advance timer
         self.run_every(self._carousel_advance, "now+15", self._carousel_interval_s)
+
+        # Daily cleanup of old renders (the first pass runs in startup reconcile)
+        self.run_every(self._prune_generated, "now+86400", 86400)
 
         # Listen for relay commands from the card
         self.listen_event(self._handle_command, self.COMMAND_EVENT)
@@ -291,6 +316,19 @@ class DashboardNotify(hass.Hass):
         now = time.time()
         self.log("Startup reconciliation running (now=%d)", int(now))
 
+        # Show the last idle image while anything new renders, so a restart
+        # never leaves the card black.
+        if self._restore_last_placeholder():
+            self.call_service("shell_command/" + self._stage_shell_command)
+            self._publish_state()
+            # A fresh restored image makes the request below return early, and
+            # only a completed render schedules the next refresh, so start the
+            # refresh chain here from the restored image's age.
+            delay = self._no_notification_refresh_s - (now - self._placeholder_generated_at)
+            if delay > 0:
+                self._schedule_placeholder_refresh(delay)
+        self._prune_generated()
+
         # Evaluate scheduled notifications
         for config in self._notification_configs:
             nid = config.get("id", "")
@@ -314,6 +352,71 @@ class DashboardNotify(hass.Hass):
         self._publish_state()
         self.log("Startup reconciliation complete")
 
+    def _restore_last_placeholder(self) -> bool:
+        """Adopt the newest placeholder already on disk. Returns True if one was found.
+
+        Its file time is used as the render time, so an old one is still
+        replaced at the next refresh, but the card shows it meanwhile.
+        """
+        generated_dir = os.path.join(self._media_dir, "generated")
+        try:
+            candidates = [
+                os.path.join(generated_dir, fname)
+                for fname in os.listdir(generated_dir)
+                if fname.startswith("no_notifications_") and fname.endswith(".png")
+            ]
+            if not candidates:
+                return False
+            newest = max(candidates, key=os.path.getmtime)
+            filename = os.path.basename(newest)
+            staged_path = os.path.join(self._media_dir, "staged", filename)
+            if not os.path.exists(staged_path):
+                shutil.copy2(newest, staged_path)
+            generated_at = os.path.getmtime(newest)
+        except OSError as e:
+            self.log("Could not restore the last placeholder: %s", e, level="WARNING")
+            return False
+
+        self._placeholder_url = f"/local/{self._www_subdir}/{filename}"
+        self._placeholder_path = staged_path
+        self._placeholder_generated_at = generated_at
+        self.log("Restored last placeholder %s", filename)
+        return True
+
+    def _prune_generated(self, kwargs: Any = None) -> None:
+        """Delete renders in generated/ older than generated_retention_days.
+
+        Every render lands in generated/ and nothing else removes it (3,389
+        files and 2.9 GB by 2026-10-30). Images still on screen are kept.
+        """
+        if self._generated_retention_days <= 0:
+            return
+        generated_dir = os.path.join(self._media_dir, "generated")
+        cutoff = time.time() - self._generated_retention_days * 86400
+        keep = {os.path.basename(n.image_path) for n in self._manager.active_notifications()}
+        if self._placeholder_path:
+            keep.add(os.path.basename(self._placeholder_path))
+        removed = 0
+        try:
+            names = os.listdir(generated_dir)
+        except OSError:
+            return
+        for fname in names:
+            if fname in keep:
+                continue
+            path = os.path.join(generated_dir, fname)
+            try:
+                if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                    os.remove(path)
+                    removed += 1
+            except OSError:
+                pass
+        if removed:
+            self.log(
+                "Pruned %d generated images older than %g days",
+                removed, self._generated_retention_days,
+            )
+
     def _backfill_detection_bundles(self, now: float) -> None:
         """Scan on-disk detection-summary tree for runs still within TTL.
 
@@ -334,6 +437,8 @@ class DashboardNotify(hass.Hass):
         # Collect all eligible (bundle_key, created_at, run_dir) tuples
         candidates: dict[str, list[tuple[float, str, str]]] = {}  # key -> [(created, run_id, run_dir)]
         for dirpath, dirnames, filenames in os.walk(ds_root):
+            # Archived runs are past any TTL; walking them cost seconds per month.
+            dirnames[:] = [d for d in dirnames if d != "archive"]
             if "summary.json" not in filenames or "generated.png" not in filenames:
                 continue
             summary_path = os.path.join(dirpath, "summary.json")
@@ -744,15 +849,35 @@ class DashboardNotify(hass.Hass):
         self._active_generations.discard(nid)
 
         if not result.get("success"):
-            self.log(
-                "Notification generation failed for '%s': %s",
-                nid, result.get("error"), level="WARNING"
-            )
+            config = self._notification_config(nid)
+            if config and self._is_schedule_active(config.get("schedule"), time.time()):
+                self.log(
+                    "Notification generation failed for '%s': %s; retrying in %.0fs",
+                    nid, result.get("error"), self._generation_retry_s, level="WARNING"
+                )
+                self.run_in(self._on_notification_retry, self._generation_retry_s, nid=nid)
+            else:
+                self.log(
+                    "Notification generation failed for '%s': %s",
+                    nid, result.get("error"), level="WARNING"
+                )
+            # Nothing new is coming for this slot; keep the idle image current.
+            self._maybe_request_placeholder(time.time())
             return
 
         # Stale-job guard: if already present, skip
         if self._manager.has(nid):
             self.log("Notification '%s' already exists (stale completion), skipping", nid)
+            return
+
+        # A slow render or a retry can finish after the end boundary already
+        # ran; adding it then would show the notification for a full TTL.
+        config = self._notification_config(nid)
+        if config and config.get("schedule") and not self._is_schedule_active(
+            config.get("schedule"), time.time()
+        ):
+            self.log("Notification '%s' rendered after its window closed, discarding", nid)
+            self._maybe_request_placeholder(time.time())
             return
 
         now = time.time()
@@ -779,6 +904,24 @@ class DashboardNotify(hass.Hass):
 
         self.log("Notification '%s' generated and added (ttl=%ds)", nid, ttl_s)
         self._publish_state()
+
+    def _notification_config(self, nid: str) -> Optional[dict[str, Any]]:
+        for config in self._notification_configs:
+            if config.get("id") == nid:
+                return config
+        return None
+
+    def _on_notification_retry(self, kwargs: Any) -> None:
+        """Retry a failed scheduled render if its window is still open."""
+        nid = kwargs.get("nid", "")
+        config = self._notification_config(nid)
+        now = time.time()
+        if not config or self._manager.has(nid) or nid in self._active_generations:
+            return
+        if not self._is_schedule_active(config.get("schedule"), now):
+            return
+        self.log("Retrying generation for '%s'", nid)
+        self._request_notification_generation(config, now)
 
     # -- Placeholder generation --
 
@@ -857,11 +1000,20 @@ class DashboardNotify(hass.Hass):
         self._active_generations.discard("placeholder")
 
         if not result.get("success"):
-            self.log(
-                "Placeholder generation failed: %s",
-                result.get("error"), level="WARNING"
+            # Without a retry the card stayed black until a notification
+            # happened to expire (2026-10-16 to 10-30, while Gemini returned 402).
+            self._placeholder_failures += 1
+            delay = min(
+                self._generation_retry_s * 2 ** min(self._placeholder_failures - 1, 10),
+                max(self._generation_retry_s, float(self._no_notification_refresh_s)),
             )
+            self.log(
+                "Placeholder generation failed (%d in a row): %s; retrying in %.0fs",
+                self._placeholder_failures, result.get("error"), delay, level="WARNING"
+            )
+            self._schedule_placeholder_refresh(delay)
             return
+        self._placeholder_failures = 0
 
         # Stale-job guard: if real notifications appeared while we were generating, discard
         if self._manager.count() > 0:
@@ -882,11 +1034,22 @@ class DashboardNotify(hass.Hass):
         now = time.time()
         next_refresh_delay = self._no_notification_refresh_s - (now - self._placeholder_generated_at)
         next_refresh_delay = max(60.0, next_refresh_delay)
-        self.run_in(self._on_placeholder_refresh, next_refresh_delay)
+        self._schedule_placeholder_refresh(next_refresh_delay)
         self.log("Placeholder refresh scheduled in %.0fs", next_refresh_delay)
+
+    def _schedule_placeholder_refresh(self, delay: float) -> None:
+        """Keep exactly one pending refresh/retry, so failures cannot stack timers."""
+        if self._placeholder_timer is not None:
+            try:
+                if self.timer_running(self._placeholder_timer):
+                    self.cancel_timer(self._placeholder_timer)
+            except Exception:
+                pass
+        self._placeholder_timer = self.run_in(self._on_placeholder_refresh, max(60.0, delay))
 
     def _on_placeholder_refresh(self, kwargs: Any) -> None:
         """Fire placeholder regeneration if we're still in idle state."""
+        self._placeholder_timer = None
         now = time.time()
         if self._manager.count() == 0:
             self._request_placeholder_generation(now)
@@ -906,9 +1069,18 @@ class DashboardNotify(hass.Hass):
         summary = data.get("summary", "Detection event")
 
         # Find the generated image on disk.  The directory structure varies per
-        # entrance (controlled by snapshot_ha_dir) so we search by run_id (UUID).
+        # entrance (controlled by snapshot_ha_dir: garage/ or doorbell/front-door/)
+        # so we search by run_id (UUID), one or two levels down.  A recursive
+        # "**" also walked every runs/archive/ month and held this callback for
+        # 12-18 s per event (2026-10-29).
         ds_root = Path(self._media_fs_root) / "detection-summary"
-        matches = list(ds_root.glob(f"**/runs/{run_id}/generated.png"))
+        if not run_id or "/" in run_id or run_id in (".", ".."):
+            self.log("Detection hook: ignoring event with run_id=%r", run_id, level="WARNING")
+            return
+        run_glob = glob.escape(run_id)
+        matches = list(ds_root.glob(f"*/runs/{run_glob}/generated.png")) or list(
+            ds_root.glob(f"*/*/runs/{run_glob}/generated.png")
+        )
         if not matches:
             self.log(
                 "Detection hook: no generated image found for run_id=%s under %s",

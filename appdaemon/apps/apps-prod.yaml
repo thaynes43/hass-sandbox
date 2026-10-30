@@ -493,8 +493,13 @@ dashboard_notify:
   no_notification_refresh_s: 3600
   notification_text_target_chars: 180
   notification_text_truncate_suffix: "..."
+  generation_retry_s: 300
+  generated_retention_days: 14
   ai_provider_conf:
-    image: gemini-default
+    # Local Qwen-Image-2.1 text-to-image on ComfyUI, the model the detection
+    # summaries use. Was gemini-default until its credits ran out (402, 2026-10-16).
+    image: comfyui-qwen-edit
+    image_workflow: qwen-image-2.1-2609-25step-t2i-gpu1
   notifications:
     - id: school_bus_pickup
       class: BasicTextImage
@@ -517,7 +522,7 @@ dashboard_notify:
     - id: no_more_snacks
       class: FunPictureImage
       text: "No more snacks! Kitchen is closed."
-      prompt_hint: "funny closed kitchen sign with a padlock on the fridge"
+      prompt_hint: "a funny closed-for-the-night kitchen with a giant padlock on the fridge"
       schedule: { start: "21:30", end: "01:00" }
       ttl_s: 12600
   detection_summary_hook:

@@ -1412,3 +1412,285 @@ class TestBackfillDetection:
         app._backfill_detection_bundles(now)
 
         assert app._manager.count() == 1  # Still just one, not duplicated
+
+
+class TestRetriesAndRestore:
+    """The idle card must not go black when a render fails or AppDaemon restarts."""
+
+    def _write_render(self, app, name: str, age_s: float) -> str:
+        path = os.path.join(app._media_dir, "generated", name)
+        with open(path, "wb") as f:
+            f.write(b"png")
+        then = time.time() - age_s
+        os.utime(path, (then, then))
+        return path
+
+    def test_failed_placeholder_retries_with_backoff_up_to_the_refresh(self):
+        app = _make_app({"generation_retry_s": 300, "no_notification_refresh_s": 3600})
+        app.initialize()
+        app.run_in.reset_mock()
+
+        delays = []
+        for _ in range(6):
+            app._active_generations.add("placeholder")
+            app._complete_placeholder_generation({"result": {"success": False, "error": "402"}})
+            cb, delay = app.run_in.call_args[0][:2]
+            assert cb == app._on_placeholder_refresh
+            delays.append(delay)
+
+        assert delays == [300, 600, 1200, 2400, 3600, 3600]
+        assert "placeholder" not in app._active_generations
+
+    def test_successful_placeholder_resets_the_backoff(self):
+        app = _make_app({"generation_retry_s": 300})
+        app.initialize()
+        app._complete_placeholder_generation({"result": {"success": False, "error": "down"}})
+        app._complete_placeholder_generation({"result": {
+            "success": True,
+            "staged_path": "/s/no_notifications_1.png",
+            "local_url": "/local/dashboard-notify/no_notifications_1.png",
+            "now": time.time(),
+        }})
+        assert app._placeholder_failures == 0
+
+    def test_failed_notification_retries_while_its_window_is_open(self):
+        app = _make_app({"generation_retry_s": 120})
+        app.initialize()
+        app.run_in.reset_mock()
+        app._active_generations.add("test_notif")
+
+        with patch.object(app, "_is_schedule_active", return_value=True):
+            app._complete_notification_generation({"result": {
+                "success": False, "nid": "test_notif", "error": "comfyui down",
+            }})
+
+        app.run_in.assert_called_once_with(app._on_notification_retry, 120, nid="test_notif")
+
+    def test_failed_notification_is_dropped_after_its_window(self):
+        app = _make_app()
+        app.initialize()
+        app.run_in.reset_mock()
+
+        with patch.object(app, "_is_schedule_active", return_value=False):
+            app._complete_notification_generation({"result": {
+                "success": False, "nid": "test_notif", "error": "comfyui down",
+            }})
+
+        app.run_in.assert_not_called()
+
+    def test_notification_retry_requests_generation_only_when_still_needed(self):
+        app = _make_app()
+        app.initialize()
+        with patch.object(app, "_request_notification_generation") as req:
+            with patch.object(app, "_is_schedule_active", return_value=True):
+                app._on_notification_retry({"nid": "test_notif"})
+                app._on_notification_retry({"nid": "unknown"})
+            with patch.object(app, "_is_schedule_active", return_value=False):
+                app._on_notification_retry({"nid": "test_notif"})
+        assert req.call_count == 1
+        assert req.call_args[0][0]["id"] == "test_notif"
+
+    def test_startup_restores_the_newest_placeholder_and_stages_it(self):
+        app = _make_app()
+        app.initialize()
+        self._write_render(app, "no_notifications_100.png", age_s=7200)
+        self._write_render(app, "no_notifications_200.png", age_s=600)
+        self._write_render(app, "school_bus_pickup_300.png", age_s=60)
+        app.call_service.reset_mock()
+
+        with patch.object(app, "_request_placeholder_generation"):
+            app._startup_reconcile({})
+
+        assert app._placeholder_url == "/local/dashboard-notify/no_notifications_200.png"
+        assert os.path.exists(os.path.join(app._media_dir, "staged", "no_notifications_200.png"))
+        app.call_service.assert_any_call("shell_command/dashboard_notify_stage")
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert "no_notifications_200.png" in attrs["placeholder_url"]
+
+    def test_restored_placeholder_still_refreshes_when_stale(self):
+        app = _make_app({"no_notification_refresh_s": 3600})
+        app.initialize()
+        self._write_render(app, "no_notifications_100.png", age_s=7200)
+        assert app._restore_last_placeholder() is True
+        with patch.object(app, "_start_generation_thread") as start:
+            app._request_placeholder_generation(time.time())
+        start.assert_called_once()
+
+    def test_restored_placeholder_is_not_rerendered_while_fresh(self):
+        app = _make_app({"no_notification_refresh_s": 3600})
+        app.initialize()
+        self._write_render(app, "no_notifications_100.png", age_s=60)
+        assert app._restore_last_placeholder() is True
+        with patch.object(app, "_start_generation_thread") as start:
+            app._request_placeholder_generation(time.time())
+        start.assert_not_called()
+
+    def test_startup_with_a_fresh_restored_placeholder_schedules_its_refresh(self):
+        """Otherwise the restored image would never refresh until a notification expired."""
+        app = _make_app({"no_notification_refresh_s": 3600})
+        app.initialize()
+        self._write_render(app, "no_notifications_100.png", age_s=1200)
+        app.run_in.reset_mock()
+
+        app._startup_reconcile({})
+
+        refreshes = [c for c in app.run_in.call_args_list if c[0][0] == app._on_placeholder_refresh]
+        assert len(refreshes) == 1
+        assert 2390 <= refreshes[0][0][1] <= 2400
+
+    def test_startup_with_a_stale_restored_placeholder_renders_now(self):
+        app = _make_app({"no_notification_refresh_s": 3600, "notifications": []})
+        app.initialize()
+        self._write_render(app, "no_notifications_100.png", age_s=7200)
+        app.run_in.reset_mock()
+
+        with patch.object(app, "_start_generation_thread") as start:
+            app._startup_reconcile({})
+
+        start.assert_called_once()
+        assert not [c for c in app.run_in.call_args_list if c[0][0] == app._on_placeholder_refresh]
+
+    def test_nothing_to_restore_leaves_the_placeholder_unset(self):
+        app = _make_app()
+        app.initialize()
+        assert app._restore_last_placeholder() is False
+        assert app._placeholder_url == ""
+
+    def test_prune_keeps_recent_and_in_use_images(self):
+        app = _make_app({"generated_retention_days": 14})
+        app.initialize()
+        old = self._write_render(app, "no_more_snacks_1.png", age_s=20 * 86400)
+        recent = self._write_render(app, "no_more_snacks_2.png", age_s=86400)
+        shown = self._write_render(app, "no_notifications_3.png", age_s=30 * 86400)
+        active = self._write_render(app, "school_bus_pickup_4.png", age_s=30 * 86400)
+        app._placeholder_path = os.path.join(app._media_dir, "staged", "no_notifications_3.png")
+        now = time.time()
+        app._manager.add(Notification(
+            id="school_bus_pickup", notification_class="BasicTextImage", text="Bus",
+            image_path=active, local_url="/local/x.png", created_at=now,
+            expires_at=now + 600, priority=50, source_id="school_bus_pickup",
+        ))
+
+        app._prune_generated()
+
+        assert not os.path.exists(old)
+        assert os.path.exists(recent)
+        assert os.path.exists(shown)
+        assert os.path.exists(active)
+
+    def test_prune_disabled_with_zero_retention(self):
+        app = _make_app({"generated_retention_days": 0})
+        app.initialize()
+        old = self._write_render(app, "no_more_snacks_1.png", age_s=400 * 86400)
+        app._prune_generated()
+        assert os.path.exists(old)
+
+
+class TestDetectionLookup:
+    def _app(self):
+        app = _make_app({
+            "detection_summary_hook": {"enabled": True, "ttl_s": 7200, "bundle_keys": ["front_door"]}
+        })
+        app.initialize()
+        return app
+
+    def _publish(self, app, run_id):
+        app._handle_detection_published(
+            "detection_summary/run_published",
+            {"bundle_key": "front_door", "run_id": run_id, "summary": "Visitor"},
+            {},
+        )
+
+    def test_finds_a_run_two_levels_down(self):
+        app = self._app()
+        run_dir = os.path.join(
+            app._media_fs_root, "detection-summary", "doorbell", "front-door", "runs", "r-1"
+        )
+        os.makedirs(run_dir)
+        with open(os.path.join(run_dir, "generated.png"), "wb") as f:
+            f.write(b"img")
+
+        self._publish(app, "r-1")
+
+        assert app._manager.has("detection_front_door_r-1")
+
+    def test_does_not_search_the_archive(self):
+        app = self._app()
+        run_dir = os.path.join(
+            app._media_fs_root, "detection-summary", "garage", "runs", "archive", "2026-09", "r-2"
+        )
+        os.makedirs(run_dir)
+        with open(os.path.join(run_dir, "generated.png"), "wb") as f:
+            f.write(b"img")
+
+        self._publish(app, "r-2")
+
+        assert not app._manager.has("detection_front_door_r-2")
+
+    def test_rejects_a_run_id_that_is_a_path(self):
+        app = self._app()
+        self._publish(app, "../../etc")
+        assert app._manager.count() == 0
+
+
+class TestReviewFollowUps:
+    def test_render_finishing_after_its_window_is_discarded(self):
+        app = _make_app()
+        app.initialize()
+        app._active_generations.add("test_notif")
+        now = time.time()
+        with patch.object(app, "_is_schedule_active", return_value=False):
+            with patch.object(app, "_maybe_request_placeholder") as ph:
+                app._complete_notification_generation({"result": {
+                    "success": True, "nid": "test_notif", "notification_class": "BasicTextImage",
+                    "text": "Late", "output_path": "/p/l.png", "staged_path": "/s/l.png",
+                    "local_url": "/local/l.png", "now": now, "ttl_s": 3600,
+                }})
+        assert not app._manager.has("test_notif")
+        ph.assert_called_once()
+
+    def test_failed_notification_keeps_the_idle_image_current(self):
+        app = _make_app()
+        app.initialize()
+        with patch.object(app, "_is_schedule_active", return_value=False):
+            with patch.object(app, "_maybe_request_placeholder") as ph:
+                app._complete_notification_generation({"result": {
+                    "success": False, "nid": "test_notif", "error": "down",
+                }})
+        ph.assert_called_once()
+
+    def test_placeholder_failures_keep_a_single_pending_timer(self):
+        app = _make_app()
+        app.initialize()
+        app.timer_running = MagicMock(return_value=True)
+        app.run_in = MagicMock(side_effect=["h1", "h2", "h3"])
+        for _ in range(3):
+            app._complete_placeholder_generation({"result": {"success": False, "error": "down"}})
+        assert [c[0][0] for c in app.cancel_timer.call_args_list] == ["h1", "h2"]
+        assert app._placeholder_timer == "h3"
+
+    def test_edit_only_provider_is_refused_at_startup(self):
+        app = _make_app()
+        provider = MagicMock()
+        provider.capabilities.supports_text_to_image = False
+        with patch("dashboard_notify.dashboard_notify_app.build_image_provider", return_value=provider):
+            app.initialize()
+        assert app._image_provider is None
+        assert any(c.kwargs.get("level") == "ERROR" for c in app.log.call_args_list)
+
+    def test_backfill_does_not_walk_archives(self):
+        app = _make_app({"detection_summary_hook": {"enabled": True, "bundle_keys": ["garage"]}})
+        app.initialize()
+        root = os.path.join(app._media_fs_root, "detection-summary", "garage", "runs")
+        os.makedirs(os.path.join(root, "archive", "2026-09", "old"))
+        walked = []
+        real_walk = os.walk
+
+        def spy(top, *a, **kw):
+            for entry in real_walk(top, *a, **kw):
+                walked.append(entry[0])
+                yield entry
+
+        with patch("dashboard_notify.dashboard_notify_app.os.walk", side_effect=spy):
+            app._backfill_detection_bundles(time.time())
+        assert walked and not [w for w in walked if "archive" in w]
