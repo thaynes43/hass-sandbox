@@ -5,6 +5,9 @@ Live Home Assistant configuration mirrors, installed November 1, 2026 for
 under epic #347 and saga #346. No copy/paste or HA restart is required.
 The now-online lamp post was added after Tom's sunset review in
 [story #352](https://work.haynesnetwork.com/projects/haynes-engineering/work_packages/352).
+Tom's household requested a warmer lamp-post color afterward in
+[story #353](https://work.haynesnetwork.com/projects/haynes-engineering/work_packages/353):
+the current setting is deeper amber (HS 28/100) at 75% brightness.
 
 | Mirror | Live entity | Installed state |
 | --- | --- | --- |
@@ -33,8 +36,10 @@ and three porch recessed lights plus the lamp post individually, using five-seco
 paced passes to handle the existing Hue mesh's occasional missed commands.
 Unavailable lights are skipped so one offline bulb does not block the rest.
 
-The lamp post uses the gold/copper palette slot throughout fall and warm gold
-in Christmas Colors; it never receives the evergreen/green palette slot.
+The lamp post uses its own deeper amber palette slot throughout fall and
+Christmas Colors. The four shared palette slots remain unchanged; it never
+receives the evergreen/green slot. The earlier yellow-gold setting was too cool
+for the household, so its dedicated swatch is now HS 28/100 at 75% brightness.
 It was initially unavailable and excluded, but Tom's sunset review confirmed it
 was online and still green. Its live color was corrected and its sunset and
 midnight coverage added at that point.

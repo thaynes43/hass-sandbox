@@ -46,7 +46,7 @@ def test_calendar_boundary(date, fall, christmas, week):
         index = render(variables['palette_index'], date)
         assert index == week
         palette = render(variables['palette'], date, **(variables | {'palette_index': index}))
-        assert len(palette) == 4
+        assert len(palette) == 5  # Four shared colors plus the warmer lamp-only swatch.
         assert all(0 <= hue <= 360 and 0 <= sat <= 100 for hue, sat in palette)
 
 
@@ -73,7 +73,7 @@ def test_lamp_post_keeps_warm_colors_in_every_palette_and_shuts_off_at_midnight(
     palettes = config['variables'].get('palettes', [config['variables'].get('palette')])
     for palette in palettes:
         hue, saturation = palette[lamp['color']]
-        assert 20 <= hue <= 60  # Copper through warm gold, never green.
+        assert (hue, saturation) == (28, 100)  # Household's warmer amber preference.
     midnight = yaml.safe_load(
         (ROOT / 'home-assistant/automations/seasonal-lighting/midnight.yaml').read_text()
     )
