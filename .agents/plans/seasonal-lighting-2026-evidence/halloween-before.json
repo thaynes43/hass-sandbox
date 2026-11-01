@@ -1,0 +1,499 @@
+{
+  "automation.front_yard_halloween_sun_sets_get_spooky": {
+    "success": true,
+    "action": "get",
+    "automation_id": "automation.front_yard_halloween_sun_sets_get_spooky",
+    "config": {
+      "id": "1757283018602",
+      "alias": "[Light] : [Front Yard] : [Sun Sets During Halloween] : [Get Spooky]",
+      "description": "",
+      "triggers": [
+        {
+          "trigger": "sun",
+          "event": "sunset",
+          "offset": 0
+        }
+      ],
+      "conditions": [],
+      "actions": [
+        {
+          "action": "scene.turn_on",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "scene.front_porch_recessed_lights_halloween"
+          },
+          "continue_on_error": true
+        },
+        {
+          "delay": {
+            "hours": 0,
+            "minutes": 0,
+            "seconds": 2,
+            "milliseconds": 0
+          }
+        },
+        {
+          "action": "scene.turn_on",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "scene.hue_calla_halloween"
+          },
+          "continue_on_error": true
+        },
+        {
+          "delay": {
+            "hours": 0,
+            "minutes": 0,
+            "seconds": 2,
+            "milliseconds": 0
+          }
+        },
+        {
+          "action": "scene.turn_on",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "scene.hue_lily_halloween"
+          },
+          "continue_on_error": true
+        },
+        {
+          "action": "switch.turn_on",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "switch.front_yard_left_double_plug_1"
+          },
+          "continue_on_error": true
+        },
+        {
+          "action": "switch.turn_on",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "switch.front_yard_left_double_plug_2"
+          },
+          "continue_on_error": true
+        },
+        {
+          "action": "switch.turn_on",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "switch.front_yard_right_double_plug_1"
+          },
+          "continue_on_error": true
+        },
+        {
+          "action": "switch.turn_on",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "switch.front_yard_right_double_plug_2"
+          },
+          "continue_on_error": true
+        },
+        {
+          "delay": {
+            "hours": 0,
+            "minutes": 0,
+            "seconds": 3,
+            "milliseconds": 0
+          }
+        },
+        {
+          "alias": "Retry all outlets once (transient Z-Wave S2 failures)",
+          "action": "switch.turn_on",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": [
+              "switch.front_yard_left_double_plug_1",
+              "switch.front_yard_left_double_plug_2",
+              "switch.front_yard_right_double_plug_1",
+              "switch.front_yard_right_double_plug_2"
+            ]
+          },
+          "continue_on_error": true
+        },
+        {
+          "alias": "Settle before re-applying the scenes",
+          "delay": {
+            "hours": 0,
+            "minutes": 0,
+            "seconds": 10,
+            "milliseconds": 0
+          }
+        },
+        {
+          "alias": "Re-apply porch scene (catches Zigbee misses from the burst)",
+          "action": "scene.turn_on",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "scene.front_porch_recessed_lights_halloween"
+          },
+          "continue_on_error": true
+        },
+        {
+          "delay": {
+            "hours": 0,
+            "minutes": 0,
+            "seconds": 2,
+            "milliseconds": 0
+          }
+        },
+        {
+          "alias": "Re-apply Calla scene",
+          "action": "scene.turn_on",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "scene.hue_calla_halloween"
+          },
+          "continue_on_error": true
+        },
+        {
+          "delay": {
+            "hours": 0,
+            "minutes": 0,
+            "seconds": 2,
+            "milliseconds": 0
+          }
+        },
+        {
+          "alias": "Re-apply Lily scene",
+          "action": "scene.turn_on",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "scene.hue_lily_halloween"
+          },
+          "continue_on_error": true
+        },
+        {
+          "alias": "Wait for the cauldron string to rejoin after power-up",
+          "wait_template": "{{ states('light.outdoor_hue_string_lights_01') not in ['unavailable', 'unknown'] }}",
+          "timeout": {
+            "hours": 0,
+            "minutes": 3,
+            "seconds": 0,
+            "milliseconds": 0
+          },
+          "continue_on_timeout": false
+        },
+        {
+          "delay": {
+            "hours": 0,
+            "minutes": 0,
+            "seconds": 5,
+            "milliseconds": 0
+          }
+        },
+        {
+          "action": "light.turn_on",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "light.outdoor_hue_string_lights_01"
+          }
+        },
+        {
+          "delay": {
+            "hours": 0,
+            "minutes": 0,
+            "seconds": 2,
+            "milliseconds": 0
+          }
+        },
+        {
+          "action": "select.select_option",
+          "metadata": {},
+          "data": {
+            "option": "disturbia"
+          },
+          "target": {
+            "entity_id": "select.outdoor_hue_string_lights_01_gradient_scene"
+          }
+        },
+        {
+          "delay": {
+            "hours": 0,
+            "minutes": 0,
+            "seconds": 15,
+            "milliseconds": 0
+          }
+        },
+        {
+          "alias": "Re-apply the gradient once",
+          "action": "select.select_option",
+          "metadata": {},
+          "data": {
+            "option": "disturbia"
+          },
+          "target": {
+            "entity_id": "select.outdoor_hue_string_lights_01_gradient_scene"
+          }
+        }
+      ],
+      "mode": "single",
+      "category": "01K8BWKXVRBKSNRJVVZMNZQ0QH"
+    },
+    "config_hash": "957bb38ae5ff17b8",
+    "enabled_before": true
+  },
+  "automation.light_front_door_doorbell_sees_someone_during_halloween_turn_on_lanterns": {
+    "success": true,
+    "action": "get",
+    "automation_id": "automation.light_front_door_doorbell_sees_someone_during_halloween_turn_on_lanterns",
+    "config": {
+      "id": "1791158582013",
+      "alias": "[Light] : [Front Door] : [Doorbell Sees Someone During Halloween] : [Turn On Lanterns]",
+      "description": "TEMPORARY for Halloween: the front door lanterns stay off at night so the themed lights show. They turn on when the doorbell camera detects a person or the doorbell is pressed (after sunset), then off once no person has been detected for 3 minutes. Delete after Halloween.",
+      "triggers": [
+        {
+          "trigger": "state",
+          "entity_id": "binary_sensor.g4_doorbell_pro_poe_person_detected",
+          "to": "on"
+        },
+        {
+          "trigger": "state",
+          "entity_id": "binary_sensor.g4_doorbell_pro_poe_doorbell",
+          "to": "on"
+        }
+      ],
+      "conditions": [
+        {
+          "condition": "sun",
+          "after": "sunset",
+          "before": "sunrise"
+        }
+      ],
+      "actions": [
+        {
+          "action": "light.turn_on",
+          "target": {
+            "entity_id": "light.downstairs_front_door_inovelli_on_off"
+          },
+          "data": {}
+        },
+        {
+          "alias": "Hold until nobody has been seen for 3 minutes",
+          "choose": [
+            {
+              "conditions": [
+                {
+                  "condition": "state",
+                  "entity_id": "binary_sensor.g4_doorbell_pro_poe_person_detected",
+                  "state": "off"
+                }
+              ],
+              "sequence": [
+                {
+                  "delay": {
+                    "hours": 0,
+                    "minutes": 3,
+                    "seconds": 0,
+                    "milliseconds": 0
+                  }
+                }
+              ]
+            }
+          ],
+          "default": [
+            {
+              "wait_for_trigger": [
+                {
+                  "trigger": "state",
+                  "entity_id": "binary_sensor.g4_doorbell_pro_poe_person_detected",
+                  "to": "off",
+                  "for": {
+                    "hours": 0,
+                    "minutes": 3,
+                    "seconds": 0
+                  }
+                }
+              ],
+              "timeout": {
+                "hours": 0,
+                "minutes": 30,
+                "seconds": 0
+              },
+              "continue_on_timeout": true
+            }
+          ]
+        },
+        {
+          "action": "light.turn_off",
+          "target": {
+            "entity_id": "light.downstairs_front_door_inovelli_on_off"
+          },
+          "data": {}
+        }
+      ],
+      "mode": "restart",
+      "category": "01K8BWKXVRBKSNRJVVZMNZQ0QH"
+    },
+    "config_hash": "b4bdabdc82af8b57",
+    "enabled_before": true
+  },
+  "automation.switch_dining_room_power_strip_outlets_toggle_mirror_to_ch1_for_halloween": {
+    "success": true,
+    "action": "get",
+    "automation_id": "automation.switch_dining_room_power_strip_outlets_toggle_mirror_to_ch1_for_halloween",
+    "config": {
+      "id": "1791137847372",
+      "alias": "[Switch] : [Dining Room] : [Power Strip Outlets Toggle] : [Mirror To CH1 For Halloween]",
+      "description": "TEMPORARY, for Halloween only. Remove after Halloween. CH1 (switch.downstairs_dining_room_power_strip_1) carries Halloween decorations and follows the two outlets in use on the dining room Z-Wave power strip (CH4 and CH5): CH1 is on while either of them is on, and off when both are off. Those two are driven by the Sun Sets / 23:00 automations.",
+      "triggers": [
+        {
+          "trigger": "state",
+          "entity_id": [
+            "switch.downstairs_dining_room_power_strip_4",
+            "switch.downstairs_dining_room_power_strip_5"
+          ],
+          "to": [
+            "on",
+            "off"
+          ],
+          "not_from": [
+            "unavailable",
+            "unknown"
+          ]
+        }
+      ],
+      "conditions": [],
+      "actions": [
+        {
+          "choose": [
+            {
+              "alias": "Either in-use outlet is on",
+              "conditions": [
+                {
+                  "condition": "or",
+                  "conditions": [
+                    {
+                      "condition": "state",
+                      "entity_id": "switch.downstairs_dining_room_power_strip_4",
+                      "state": "on"
+                    },
+                    {
+                      "condition": "state",
+                      "entity_id": "switch.downstairs_dining_room_power_strip_5",
+                      "state": "on"
+                    }
+                  ]
+                }
+              ],
+              "sequence": [
+                {
+                  "action": "switch.turn_on",
+                  "target": {
+                    "entity_id": "switch.downstairs_dining_room_power_strip_1"
+                  }
+                }
+              ]
+            }
+          ],
+          "default": [
+            {
+              "alias": "Both in-use outlets are off",
+              "action": "switch.turn_off",
+              "target": {
+                "entity_id": "switch.downstairs_dining_room_power_strip_1"
+              }
+            }
+          ]
+        }
+      ],
+      "mode": "queued",
+      "max": 10,
+      "category": "01K8BWKXVRBKSNRJVVZMNZQ0QH"
+    },
+    "config_hash": "bec2617eb97985da",
+    "enabled_before": true
+  },
+  "automation.switch_front_yard_at_specific_time_turn_off": {
+    "success": true,
+    "action": "get",
+    "automation_id": "automation.switch_front_yard_at_specific_time_turn_off",
+    "config": {
+      "id": "1757283214012",
+      "alias": "[Switch] : [Front Yard] : [At Specific Time] : [Turn Off]",
+      "description": "Halloween plug-off at 02:00. Outlet switch.front_yard_left_double_plug_1 is always-on: it powers the Hue string light (light.outdoor_hue_string_lights_01), which is switched off logically here instead of by a power cut. The other three outlets are powered off.",
+      "triggers": [
+        {
+          "trigger": "time",
+          "at": "02:00:00"
+        }
+      ],
+      "conditions": [],
+      "actions": [
+        {
+          "action": "light.turn_off",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "light.outdoor_hue_string_lights_01"
+          },
+          "continue_on_error": true
+        },
+        {
+          "action": "switch.turn_off",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "switch.front_yard_left_double_plug_2"
+          },
+          "continue_on_error": true
+        },
+        {
+          "action": "switch.turn_off",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "switch.front_yard_right_double_plug_1"
+          },
+          "continue_on_error": true
+        },
+        {
+          "action": "switch.turn_off",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": "switch.front_yard_right_double_plug_2"
+          },
+          "continue_on_error": true
+        },
+        {
+          "delay": {
+            "hours": 0,
+            "minutes": 0,
+            "seconds": 3,
+            "milliseconds": 0
+          }
+        },
+        {
+          "alias": "Retry the three outlets once (transient Z-Wave S2 failures)",
+          "action": "switch.turn_off",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": [
+              "switch.front_yard_left_double_plug_2",
+              "switch.front_yard_right_double_plug_1",
+              "switch.front_yard_right_double_plug_2"
+            ]
+          },
+          "continue_on_error": true
+        }
+      ],
+      "mode": "single",
+      "category": "01K8BWKXVRBKSNRJVVZMNZQ0QH"
+    },
+    "config_hash": "6bbf7be028683d71",
+    "enabled_before": true
+  }
+}

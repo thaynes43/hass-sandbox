@@ -1,0 +1,68 @@
+id: '1793559906142'
+alias: '[Light] : [Front Door] : [Seasonal Visitor] : [Turn On Lanterns]'
+description: Visitor-only lanterns during Colors of Fall and interim Christmas Colors. Person detection or doorbell
+  turns lanterns on after dark; off after 3 clear minutes, with a minimum 3 minutes after a doorbell press. Person
+  sensor has no device_class, so uses generic state triggers. Midnight cancels the active delay and switches lanterns
+  off; later visitors can still get light. Yields when Get Jolly or ordinary ambient sunset lighting is enabled.
+triggers:
+- trigger: state
+  entity_id: binary_sensor.g4_doorbell_pro_poe_person_detected
+  to: 'on'
+  not_from:
+  - unknown
+  - unavailable
+  id: visitor
+- trigger: occupancy.detected
+  target:
+    entity_id: binary_sensor.g4_doorbell_pro_poe_doorbell
+  id: visitor
+- trigger: time
+  at: 00:00:00
+  id: clear
+conditions:
+- condition: template
+  value_template: '{{ now().strftime(''%Y-%m-%d'') >= ''2026-11-01'' }}'
+- condition: state
+  entity_id: automation.light_front_yard_sun_sets_during_christmas_get_jolly
+  state: 'off'
+- condition: state
+  entity_id: automation.light_front_yard_at_sunset_turn_on
+  state: 'off'
+- condition: or
+  conditions:
+  - condition: state
+    entity_id: automation.light_front_yard_sun_sets_colors_of_fall
+    state: 'on'
+  - condition: state
+    entity_id: automation.light_front_yard_sun_sets_christmas_colors
+    state: 'on'
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id: clear
+    sequence:
+    - action: light.turn_off
+      target:
+        entity_id: light.downstairs_front_door_inovelli_on_off
+  default:
+  - condition: sun.is_set
+  - action: light.turn_on
+    target:
+      entity_id: light.downstairs_front_door_inovelli_on_off
+  - alias: Wait for the visitor to leave; an already-clear sensor passes immediately
+    wait_template: '{{ is_state(''binary_sensor.g4_doorbell_pro_poe_person_detected'', ''off'') }}'
+  - delay:
+      minutes: 3
+  - condition: state
+    entity_id: automation.light_front_yard_sun_sets_during_christmas_get_jolly
+    state: 'off'
+  - condition: state
+    entity_id: automation.light_front_yard_at_sunset_turn_on
+    state: 'off'
+  - action: light.turn_off
+    target:
+      entity_id: light.downstairs_front_door_inovelli_on_off
+mode: restart
+trace:
+  stored_traces: 10
