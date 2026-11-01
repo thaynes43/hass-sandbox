@@ -1,0 +1,223 @@
+{
+  "fall_states": {
+    "data": {
+      "success": true,
+      "count": 17,
+      "states": {
+        "light.front_yard_left_hue_calla_01": {
+          "entity_id": "light.front_yard_left_hue_calla_01",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              35.294,
+              100
+            ]
+          }
+        },
+        "light.front_yard_left_hue_calla_02": {
+          "entity_id": "light.front_yard_left_hue_calla_02",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              44.75,
+              94.118
+            ]
+          }
+        },
+        "light.front_yard_left_hue_calla_03": {
+          "entity_id": "light.front_yard_left_hue_calla_03",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              22.677,
+              99.608
+            ]
+          }
+        },
+        "light.front_yard_left_hue_calla_04": {
+          "entity_id": "light.front_yard_left_hue_calla_04",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              50,
+              84.706
+            ]
+          }
+        },
+        "light.front_yard_right_hue_calla_01": {
+          "entity_id": "light.front_yard_right_hue_calla_01",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              35.294,
+              100
+            ]
+          }
+        },
+        "light.front_yard_right_hue_calla_02": {
+          "entity_id": "light.front_yard_right_hue_calla_02",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              44.75,
+              94.118
+            ]
+          }
+        },
+        "light.front_yard_right_hue_calla_03": {
+          "entity_id": "light.front_yard_right_hue_calla_03",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              22.677,
+              99.608
+            ]
+          }
+        },
+        "light.front_yard_right_hue_calla_04": {
+          "entity_id": "light.front_yard_right_hue_calla_04",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              50,
+              84.706
+            ]
+          }
+        },
+        "light.front_yard_left_hue_lily_01": {
+          "entity_id": "light.front_yard_left_hue_lily_01",
+          "state": "on",
+          "attributes": {
+            "brightness": 230,
+            "hs_color": [
+              22.677,
+              99.608
+            ]
+          }
+        },
+        "light.front_yard_left_hue_lily_02": {
+          "entity_id": "light.front_yard_left_hue_lily_02",
+          "state": "on",
+          "attributes": {
+            "brightness": 230,
+            "hs_color": [
+              35.294,
+              100
+            ]
+          }
+        },
+        "light.front_yard_left_hue_lily_03": {
+          "entity_id": "light.front_yard_left_hue_lily_03",
+          "state": "on",
+          "attributes": {
+            "brightness": 230,
+            "hs_color": [
+              44.75,
+              94.118
+            ]
+          }
+        },
+        "light.front_yard_right_hue_lily_01": {
+          "entity_id": "light.front_yard_right_hue_lily_01",
+          "state": "on",
+          "attributes": {
+            "brightness": 230,
+            "hs_color": [
+              44.75,
+              94.118
+            ]
+          }
+        },
+        "light.front_yard_right_hue_lily_02": {
+          "entity_id": "light.front_yard_right_hue_lily_02",
+          "state": "on",
+          "attributes": {
+            "brightness": 230,
+            "hs_color": [
+              50,
+              84.706
+            ]
+          }
+        },
+        "light.front_yard_right_hue_lily_03": {
+          "entity_id": "light.front_yard_right_hue_lily_03",
+          "state": "on",
+          "attributes": {
+            "brightness": 230,
+            "hs_color": [
+              22.677,
+              99.608
+            ]
+          }
+        },
+        "light.outdoor_front_porch_hue_recessed_01": {
+          "entity_id": "light.outdoor_front_porch_hue_recessed_01",
+          "state": "on",
+          "attributes": {
+            "brightness": 166,
+            "hs_color": [
+              35.294,
+              100
+            ]
+          }
+        },
+        "light.outdoor_front_porch_hue_recessed_02": {
+          "entity_id": "light.outdoor_front_porch_hue_recessed_02",
+          "state": "on",
+          "attributes": {
+            "brightness": 166,
+            "hs_color": [
+              44.75,
+              94.118
+            ]
+          }
+        },
+        "light.outdoor_front_porch_hue_recessed_03": {
+          "entity_id": "light.outdoor_front_porch_hue_recessed_03",
+          "state": "on",
+          "attributes": {
+            "brightness": 166,
+            "hs_color": [
+              22.677,
+              99.608
+            ]
+          }
+        }
+      }
+    },
+    "metadata": {
+      "home_assistant_timezone": "America/New_York",
+      "timestamp_format": "ISO 8601 (America/New_York)",
+      "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/New_York local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+    }
+  },
+  "fall_traces": {
+    "success": true,
+    "automation_id": "automation.light_front_yard_sun_sets_colors_of_fall",
+    "trace_count": 1,
+    "total_available": 2,
+    "offset": 0,
+    "order": "newest",
+    "has_more": true,
+    "traces": [
+      {
+        "run_id": "328ee0b52530591f8474e4771c6003a5",
+        "timestamp": {
+          "start": "2026-11-01T19:05:20.991917+00:00",
+          "finish": "2026-11-01T19:05:44.794575+00:00"
+        },
+        "state": "stopped",
+        "execution": "finished"
+      }
+    ],
+    "hint": "Use run_id with this tool to get detailed trace information"
+  }
+}

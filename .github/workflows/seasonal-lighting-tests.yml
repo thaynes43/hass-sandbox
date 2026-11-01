@@ -1,0 +1,32 @@
+name: Seasonal Lighting Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'home-assistant/automations/seasonal-lighting/**'
+      - 'scripts/seasonal-lighting-tests/**'
+      - 'scripts/automation-tests/test_movie_room_shutdown.py'
+      - '.github/workflows/seasonal-lighting-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'home-assistant/automations/seasonal-lighting/**'
+      - 'scripts/seasonal-lighting-tests/**'
+      - 'scripts/automation-tests/test_movie_room_shutdown.py'
+      - '.github/workflows/seasonal-lighting-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  seasonal-lighting:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'pytest>=8,<10' 'PyYAML>=6,<7' 'Jinja2>=3.1,<4'
+      - run: nice -n 19 python -m pytest -q scripts/seasonal-lighting-tests

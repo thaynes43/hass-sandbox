@@ -1,0 +1,270 @@
+{
+  "installed_at": "2026-11-01",
+  "home_assistant_version": "2026.10.3",
+  "timezone": "America/New_York",
+  "story": 348,
+  "live_automation_states": {
+    "data": {
+      "success": true,
+      "count": 11,
+      "states": {
+        "automation.front_yard_halloween_sun_sets_get_spooky": {
+          "entity_id": "automation.front_yard_halloween_sun_sets_get_spooky",
+          "state": "off"
+        },
+        "automation.light_front_door_doorbell_sees_someone_during_halloween_turn_on_lanterns": {
+          "entity_id": "automation.light_front_door_doorbell_sees_someone_during_halloween_turn_on_lanterns",
+          "state": "off"
+        },
+        "automation.switch_dining_room_power_strip_outlets_toggle_mirror_to_ch1_for_halloween": {
+          "entity_id": "automation.switch_dining_room_power_strip_outlets_toggle_mirror_to_ch1_for_halloween",
+          "state": "off"
+        },
+        "automation.switch_front_yard_at_specific_time_turn_off": {
+          "entity_id": "automation.switch_front_yard_at_specific_time_turn_off",
+          "state": "off"
+        },
+        "automation.light_front_yard_at_specific_time_turn_off_ambient_lighting": {
+          "entity_id": "automation.light_front_yard_at_specific_time_turn_off_ambient_lighting",
+          "state": "on"
+        },
+        "automation.light_front_yard_at_sunset_turn_on": {
+          "entity_id": "automation.light_front_yard_at_sunset_turn_on",
+          "state": "off"
+        },
+        "automation.light_front_yard_sun_sets_during_christmas_get_jolly": {
+          "entity_id": "automation.light_front_yard_sun_sets_during_christmas_get_jolly",
+          "state": "off"
+        },
+        "automation.light_front_yard_at_specific_time_turn_off_twinkly": {
+          "entity_id": "automation.light_front_yard_at_specific_time_turn_off_twinkly",
+          "state": "off"
+        },
+        "automation.light_front_yard_sun_sets_colors_of_fall": {
+          "entity_id": "automation.light_front_yard_sun_sets_colors_of_fall",
+          "state": "on"
+        },
+        "automation.light_front_yard_sun_sets_christmas_colors": {
+          "entity_id": "automation.light_front_yard_sun_sets_christmas_colors",
+          "state": "on"
+        },
+        "automation.light_front_door_seasonal_visitor_turn_on_lanterns": {
+          "entity_id": "automation.light_front_door_seasonal_visitor_turn_on_lanterns",
+          "state": "on"
+        }
+      }
+    },
+    "metadata": {
+      "home_assistant_timezone": "America/New_York",
+      "timestamp_format": "ISO 8601 (America/New_York)",
+      "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/New_York local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+    }
+  },
+  "christmas_live_test": {
+    "data": {
+      "success": true,
+      "count": 17,
+      "states": {
+        "light.front_yard_left_hue_calla_01": {
+          "entity_id": "light.front_yard_left_hue_calla_01",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              0,
+              100
+            ]
+          }
+        },
+        "light.front_yard_left_hue_calla_02": {
+          "entity_id": "light.front_yard_left_hue_calla_02",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              120,
+              100
+            ]
+          }
+        },
+        "light.front_yard_left_hue_calla_03": {
+          "entity_id": "light.front_yard_left_hue_calla_03",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              44.87,
+              45.098
+            ]
+          }
+        },
+        "light.front_yard_left_hue_calla_04": {
+          "entity_id": "light.front_yard_left_hue_calla_04",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              0,
+              100
+            ]
+          }
+        },
+        "light.front_yard_right_hue_calla_01": {
+          "entity_id": "light.front_yard_right_hue_calla_01",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              0,
+              100
+            ]
+          }
+        },
+        "light.front_yard_right_hue_calla_02": {
+          "entity_id": "light.front_yard_right_hue_calla_02",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              120,
+              100
+            ]
+          }
+        },
+        "light.front_yard_right_hue_calla_03": {
+          "entity_id": "light.front_yard_right_hue_calla_03",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              44.87,
+              45.098
+            ]
+          }
+        },
+        "light.front_yard_right_hue_calla_04": {
+          "entity_id": "light.front_yard_right_hue_calla_04",
+          "state": "on",
+          "attributes": {
+            "brightness": 217,
+            "hs_color": [
+              0,
+              100
+            ]
+          }
+        },
+        "light.front_yard_left_hue_lily_01": {
+          "entity_id": "light.front_yard_left_hue_lily_01",
+          "state": "on",
+          "attributes": {
+            "brightness": 230,
+            "hs_color": [
+              44.87,
+              45.098
+            ]
+          }
+        },
+        "light.front_yard_left_hue_lily_02": {
+          "entity_id": "light.front_yard_left_hue_lily_02",
+          "state": "on",
+          "attributes": {
+            "brightness": 230,
+            "hs_color": [
+              0,
+              100
+            ]
+          }
+        },
+        "light.front_yard_left_hue_lily_03": {
+          "entity_id": "light.front_yard_left_hue_lily_03",
+          "state": "on",
+          "attributes": {
+            "brightness": 230,
+            "hs_color": [
+              120,
+              100
+            ]
+          }
+        },
+        "light.front_yard_right_hue_lily_01": {
+          "entity_id": "light.front_yard_right_hue_lily_01",
+          "state": "on",
+          "attributes": {
+            "brightness": 230,
+            "hs_color": [
+              120,
+              100
+            ]
+          }
+        },
+        "light.front_yard_right_hue_lily_02": {
+          "entity_id": "light.front_yard_right_hue_lily_02",
+          "state": "on",
+          "attributes": {
+            "brightness": 230,
+            "hs_color": [
+              0,
+              100
+            ]
+          }
+        },
+        "light.front_yard_right_hue_lily_03": {
+          "entity_id": "light.front_yard_right_hue_lily_03",
+          "state": "on",
+          "attributes": {
+            "brightness": 230,
+            "hs_color": [
+              44.87,
+              45.098
+            ]
+          }
+        },
+        "light.outdoor_front_porch_hue_recessed_01": {
+          "entity_id": "light.outdoor_front_porch_hue_recessed_01",
+          "state": "on",
+          "attributes": {
+            "brightness": 166,
+            "hs_color": [
+              0,
+              100
+            ]
+          }
+        },
+        "light.outdoor_front_porch_hue_recessed_02": {
+          "entity_id": "light.outdoor_front_porch_hue_recessed_02",
+          "state": "on",
+          "attributes": {
+            "brightness": 166,
+            "hs_color": [
+              120,
+              100
+            ]
+          }
+        },
+        "light.outdoor_front_porch_hue_recessed_03": {
+          "entity_id": "light.outdoor_front_porch_hue_recessed_03",
+          "state": "on",
+          "attributes": {
+            "brightness": 166,
+            "hs_color": [
+              44.87,
+              45.098
+            ]
+          }
+        }
+      }
+    },
+    "metadata": {
+      "home_assistant_timezone": "America/New_York",
+      "timestamp_format": "ISO 8601 (America/New_York)",
+      "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/New_York local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+    }
+  },
+  "notes": [
+    "Fall and Christmas actions executed on all 17 eligible Hue lights. Both completed and colors/brightness verified; daytime off baseline restored, retrying scene once for two missed right Calla off commands.",
+    "Zooz yard outlets, Hue strings, lamp post and Christmas decorations not commanded.",
+    "Live HA calendar renders cover weekly boundaries and Thanksgiving/Black Friday. Focused fake-time tests cover the late-doorbell race and long occupancy.",
+    "Actual sunset event and physical camera/doorbell visitor not exercised. No clock or sensor state forged.",
+    "Managed gh secret list was denied HTTP 403; operation stopped, existing workflows retained without credential changes."
+  ]
+}
