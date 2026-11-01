@@ -35,24 +35,14 @@
   "fall_runtime": {
     "success": true,
     "automation_id": "automation.light_front_yard_sun_sets_colors_of_fall",
-    "trace_count": 1,
-    "total_available": 10,
-    "offset": 0,
-    "order": "newest",
-    "has_more": true,
-    "traces": [
-      {
-        "run_id": "b7d8522306c240f9befda6a344eb30a0",
-        "timestamp": {
-          "start": "2026-11-01T22:42:24.127645+00:00",
-          "finish": "2026-11-01T22:42:24.128117+00:00"
-        },
-        "state": "stopped",
-        "trigger": "event 'automation_reloaded'",
-        "execution": "failed_single"
-      }
-    ],
-    "hint": "Use run_id with this tool to get detailed trace information"
+    "run_id": "1452a74de4d01a7ce04d2f6da1281b95",
+    "timestamp": {
+      "start": "2026-11-01T22:42:22.696600+00:00",
+      "finish": "2026-11-01T22:42:48.484425+00:00"
+    },
+    "state": "stopped",
+    "script_execution": "finished"
   },
-  "verification": "26 focused tests pass, including all four fall lamp-post slots, Christmas lamp-post slot and midnight off coverage. Existing 17 lights and visitor timing unchanged."
+  "verification": "26 focused tests pass, including all four fall lamp-post slots, Christmas lamp-post slot and midnight off coverage. Existing 17 lights and visitor timing unchanged.",
+  "runtime_note": "The updated fall controller completed its automation_reloaded recovery run successfully at 22:42:48Z. Later reload events were ignored by single mode while that same run was active, as intended. The original natural sunset run at 21:40:19Z also finished successfully."
 }
