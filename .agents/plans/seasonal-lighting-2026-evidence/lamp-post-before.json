@@ -1,0 +1,535 @@
+{
+  "fall": {
+    "success": true,
+    "action": "get",
+    "automation_id": "automation.light_front_yard_sun_sets_colors_of_fall",
+    "config": {
+      "id": "1793559895239",
+      "alias": "[Light] : [Front Yard] : [Sun Sets] : [Colors of Fall]",
+      "description": "2026 Colors of Fall: Nov 1-7 amber/gold/orange; Nov 8-14 copper/burgundy; Nov 15-21 evergreen accents; Nov 22-26 final autumn blend. Thanksgiving Nov 26 is the final fall night. Only 8 Calla, 6 Lily and 3 porch Hue lights; Zooz outlets, Hue strings and lamp post excluded. Existing midnight ambient shutoff remains. Yields to ordinary sunset lighting or Get Jolly. Local HA timezone.",
+      "triggers": [
+        {
+          "trigger": "sun.sunset",
+          "id": "sunset"
+        },
+        {
+          "trigger": "homeassistant",
+          "event": "start",
+          "id": "recovery"
+        },
+        {
+          "trigger": "event",
+          "event_type": "automation_reloaded",
+          "id": "recovery"
+        }
+      ],
+      "conditions": [
+        {
+          "condition": "template",
+          "value_template": "{{ '2026-11-01' <= now().strftime('%Y-%m-%d') <= '2026-11-26' }}"
+        },
+        {
+          "condition": "state",
+          "entity_id": "automation.light_front_yard_sun_sets_during_christmas_get_jolly",
+          "state": "off"
+        },
+        {
+          "condition": "state",
+          "entity_id": "automation.light_front_yard_at_sunset_turn_on",
+          "state": "off"
+        },
+        {
+          "condition": "sun.is_set"
+        },
+        {
+          "condition": "time",
+          "after": "12:00:00"
+        }
+      ],
+      "actions": [
+        {
+          "alias": "Apply the palette twice, pacing individual Hue commands to catch mesh misses",
+          "repeat": {
+            "count": 2,
+            "sequence": [
+              {
+                "repeat": {
+                  "for_each": "{{ seasonal_lights }}",
+                  "sequence": [
+                    {
+                      "if": [
+                        {
+                          "condition": "state",
+                          "entity_id": "automation.light_front_yard_sun_sets_during_christmas_get_jolly",
+                          "state": "off"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "automation.light_front_yard_at_sunset_turn_on",
+                          "state": "off"
+                        },
+                        {
+                          "condition": "template",
+                          "value_template": "{{ has_value(repeat.item.entity_id) }}"
+                        }
+                      ],
+                      "then": [
+                        {
+                          "action": "light.turn_on",
+                          "target": {
+                            "entity_id": "{{ repeat.item.entity_id }}"
+                          },
+                          "data": {
+                            "hs_color": "{{ palette[repeat.item.color] }}",
+                            "brightness_pct": "{{ repeat.item.brightness }}",
+                            "transition": 5
+                          },
+                          "continue_on_error": true
+                        }
+                      ]
+                    },
+                    {
+                      "delay": {
+                        "milliseconds": 400
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "delay": {
+                  "seconds": 5
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "variables": {
+        "palette_index": "{{ 0 if now().day < 8 else 1 if now().day < 15 else 2 if now().day < 22 else 3 }}",
+        "palettes": [
+          [
+            [
+              35,
+              100
+            ],
+            [
+              45,
+              95
+            ],
+            [
+              22,
+              100
+            ],
+            [
+              50,
+              85
+            ]
+          ],
+          [
+            [
+              25,
+              100
+            ],
+            [
+              38,
+              95
+            ],
+            [
+              8,
+              100
+            ],
+            [
+              355,
+              90
+            ]
+          ],
+          [
+            [
+              15,
+              100
+            ],
+            [
+              42,
+              90
+            ],
+            [
+              350,
+              95
+            ],
+            [
+              120,
+              90
+            ]
+          ],
+          [
+            [
+              25,
+              100
+            ],
+            [
+              45,
+              90
+            ],
+            [
+              350,
+              95
+            ],
+            [
+              120,
+              95
+            ]
+          ]
+        ],
+        "palette": "{{ palettes[palette_index | int] }}",
+        "seasonal_lights": [
+          {
+            "entity_id": "light.front_yard_left_hue_calla_01",
+            "color": 0,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_left_hue_calla_02",
+            "color": 1,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_left_hue_calla_03",
+            "color": 2,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_left_hue_calla_04",
+            "color": 3,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_calla_01",
+            "color": 0,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_calla_02",
+            "color": 1,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_calla_03",
+            "color": 2,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_calla_04",
+            "color": 3,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_left_hue_lily_01",
+            "color": 2,
+            "brightness": 90
+          },
+          {
+            "entity_id": "light.front_yard_left_hue_lily_02",
+            "color": 0,
+            "brightness": 90
+          },
+          {
+            "entity_id": "light.front_yard_left_hue_lily_03",
+            "color": 1,
+            "brightness": 90
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_lily_01",
+            "color": 1,
+            "brightness": 90
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_lily_02",
+            "color": 3,
+            "brightness": 90
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_lily_03",
+            "color": 2,
+            "brightness": 90
+          },
+          {
+            "entity_id": "light.outdoor_front_porch_hue_recessed_01",
+            "color": 0,
+            "brightness": 65
+          },
+          {
+            "entity_id": "light.outdoor_front_porch_hue_recessed_02",
+            "color": 1,
+            "brightness": 65
+          },
+          {
+            "entity_id": "light.outdoor_front_porch_hue_recessed_03",
+            "color": 2,
+            "brightness": 65
+          }
+        ]
+      },
+      "mode": "single",
+      "trace": {
+        "stored_traces": 10
+      }
+    },
+    "config_hash": "653c69243794fbd5"
+  },
+  "christmas": {
+    "success": true,
+    "action": "get",
+    "automation_id": "automation.light_front_yard_sun_sets_christmas_colors",
+    "config": {
+      "id": "1793559895748",
+      "alias": "[Light] : [Front Yard] : [Sun Sets] : [Christmas Colors]",
+      "description": "From Nov 27 2026 (day after Thanksgiving), red, green and warm gold on the 17 core Hue lights only. Continues until superseded: enabling Get Jolly or ordinary ambient sunset lighting prevents this automation from applying its palette. No Zooz outlets, Hue strings, Twinkly, trees or lamp post. Existing midnight ambient off remains. Visitor-only lanterns managed separately. Local HA timezone.",
+      "triggers": [
+        {
+          "trigger": "sun.sunset",
+          "id": "sunset"
+        },
+        {
+          "trigger": "homeassistant",
+          "event": "start",
+          "id": "recovery"
+        },
+        {
+          "trigger": "event",
+          "event_type": "automation_reloaded",
+          "id": "recovery"
+        }
+      ],
+      "conditions": [
+        {
+          "condition": "template",
+          "value_template": "{{ now().strftime('%Y-%m-%d') >= '2026-11-27' }}"
+        },
+        {
+          "condition": "state",
+          "entity_id": "automation.light_front_yard_sun_sets_during_christmas_get_jolly",
+          "state": "off"
+        },
+        {
+          "condition": "state",
+          "entity_id": "automation.light_front_yard_at_sunset_turn_on",
+          "state": "off"
+        },
+        {
+          "condition": "sun.is_set"
+        },
+        {
+          "condition": "time",
+          "after": "12:00:00"
+        }
+      ],
+      "actions": [
+        {
+          "alias": "Apply the palette twice, pacing individual Hue commands to catch mesh misses",
+          "repeat": {
+            "count": 2,
+            "sequence": [
+              {
+                "repeat": {
+                  "for_each": "{{ seasonal_lights }}",
+                  "sequence": [
+                    {
+                      "if": [
+                        {
+                          "condition": "state",
+                          "entity_id": "automation.light_front_yard_sun_sets_during_christmas_get_jolly",
+                          "state": "off"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "automation.light_front_yard_at_sunset_turn_on",
+                          "state": "off"
+                        },
+                        {
+                          "condition": "template",
+                          "value_template": "{{ has_value(repeat.item.entity_id) }}"
+                        }
+                      ],
+                      "then": [
+                        {
+                          "action": "light.turn_on",
+                          "target": {
+                            "entity_id": "{{ repeat.item.entity_id }}"
+                          },
+                          "data": {
+                            "hs_color": "{{ palette[repeat.item.color] }}",
+                            "brightness_pct": "{{ repeat.item.brightness }}",
+                            "transition": 5
+                          },
+                          "continue_on_error": true
+                        }
+                      ]
+                    },
+                    {
+                      "delay": {
+                        "milliseconds": 400
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "delay": {
+                  "seconds": 5
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "variables": {
+        "palette": [
+          [
+            0,
+            100
+          ],
+          [
+            120,
+            100
+          ],
+          [
+            45,
+            45
+          ],
+          [
+            0,
+            100
+          ]
+        ],
+        "seasonal_lights": [
+          {
+            "entity_id": "light.front_yard_left_hue_calla_01",
+            "color": 0,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_left_hue_calla_02",
+            "color": 1,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_left_hue_calla_03",
+            "color": 2,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_left_hue_calla_04",
+            "color": 3,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_calla_01",
+            "color": 0,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_calla_02",
+            "color": 1,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_calla_03",
+            "color": 2,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_calla_04",
+            "color": 3,
+            "brightness": 85
+          },
+          {
+            "entity_id": "light.front_yard_left_hue_lily_01",
+            "color": 2,
+            "brightness": 90
+          },
+          {
+            "entity_id": "light.front_yard_left_hue_lily_02",
+            "color": 0,
+            "brightness": 90
+          },
+          {
+            "entity_id": "light.front_yard_left_hue_lily_03",
+            "color": 1,
+            "brightness": 90
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_lily_01",
+            "color": 1,
+            "brightness": 90
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_lily_02",
+            "color": 3,
+            "brightness": 90
+          },
+          {
+            "entity_id": "light.front_yard_right_hue_lily_03",
+            "color": 2,
+            "brightness": 90
+          },
+          {
+            "entity_id": "light.outdoor_front_porch_hue_recessed_01",
+            "color": 0,
+            "brightness": 65
+          },
+          {
+            "entity_id": "light.outdoor_front_porch_hue_recessed_02",
+            "color": 1,
+            "brightness": 65
+          },
+          {
+            "entity_id": "light.outdoor_front_porch_hue_recessed_03",
+            "color": 2,
+            "brightness": 65
+          }
+        ]
+      },
+      "mode": "single",
+      "trace": {
+        "stored_traces": 10
+      }
+    },
+    "config_hash": "bc50fd24c838795d"
+  },
+  "midnight": {
+    "success": true,
+    "action": "get",
+    "automation_id": "automation.light_front_yard_at_specific_time_turn_off_ambient_lighting",
+    "config": {
+      "id": "1750643944980",
+      "alias": "[Light] : [Front Yard] : [At Specific Time] : [Turn Off Ambient Lighting]",
+      "description": "",
+      "triggers": [
+        {
+          "at": "00:00:00",
+          "trigger": "time"
+        }
+      ],
+      "conditions": [],
+      "actions": [
+        {
+          "action": "light.turn_off",
+          "metadata": {},
+          "data": {},
+          "target": {
+            "entity_id": [
+              "light.front_yard_hue_lily_lights",
+              "light.outdoor_front_porch_lights",
+              "light.front_yard_hue_calla_lights",
+              "light.downstairs_front_door_inovelli_on_off"
+            ]
+          }
+        }
+      ],
+      "mode": "single",
+      "category": "01KA7MG1VEYCEXZRH6Z4TYRJSS"
+    },
+    "config_hash": "1988311ac5b5e4dd"
+  }
+}

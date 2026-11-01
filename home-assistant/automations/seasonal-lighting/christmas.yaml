@@ -1,9 +1,9 @@
 id: '1793559895748'
 alias: '[Light] : [Front Yard] : [Sun Sets] : [Christmas Colors]'
-description: 'From Nov 27 2026 (day after Thanksgiving), red, green and warm gold on the 17 core Hue lights only.
-  Continues until superseded: enabling Get Jolly or ordinary ambient sunset lighting prevents this automation from
-  applying its palette. No Zooz outlets, Hue strings, Twinkly, trees or lamp post. Existing midnight ambient off
-  remains. Visitor-only lanterns managed separately. Local HA timezone.'
+description: 'From Nov 27 2026 (day after Thanksgiving), red, green and warm gold on the 17 core Hue lights plus
+  a warm-gold lamp post. Continues until superseded: enabling Get Jolly or ordinary ambient sunset lighting prevents
+  this automation from applying its palette. No Zooz outlets, Hue strings, Twinkly or trees. Existing midnight ambient
+  off remains. Visitor-only lanterns managed separately. Local HA timezone.'
 triggers:
 - trigger: sun.sunset
   id: sunset
@@ -117,6 +117,9 @@ variables:
   - entity_id: light.outdoor_front_porch_hue_recessed_03
     color: 2
     brightness: 65
+  - entity_id: light.front_yard_lamp_post_hue_edison
+    color: 2
+    brightness: 75
 mode: single
 trace:
   stored_traces: 10
