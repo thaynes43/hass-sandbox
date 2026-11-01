@@ -1,0 +1,48 @@
+{
+  "story": 352,
+  "change": "Lamp post now online after sunset review: warm gold/copper through fall, warm gold for Christmas, midnight off.",
+  "before_lamp": {
+    "state": "on",
+    "brightness": 255,
+    "hs_color": [
+      135.529,
+      100
+    ]
+  },
+  "after_lamp": {
+    "data": {
+      "entity_id": "light.front_yard_lamp_post_hue_edison",
+      "state": "on",
+      "attributes": {
+        "brightness": 191,
+        "hs_color": [
+          44.75,
+          94.118
+        ]
+      }
+    },
+    "metadata": {
+      "home_assistant_timezone": "America/New_York",
+      "timestamp_format": "ISO 8601 (America/New_York)",
+      "note": "Per-record timestamp fields (last_changed, last_updated, last_reported, when, last_triggered) have been converted to America/New_York local time. Query-window boundary fields (period, start_time, end_time) remain in UTC."
+    }
+  },
+  "live_hashes": {
+    "fall": "4e4e718192fe5c74",
+    "christmas": "41aa31b1facd4382",
+    "midnight": "11b47cd8670750ca"
+  },
+  "fall_runtime": {
+    "success": true,
+    "automation_id": "automation.light_front_yard_sun_sets_colors_of_fall",
+    "run_id": "1452a74de4d01a7ce04d2f6da1281b95",
+    "timestamp": {
+      "start": "2026-11-01T22:42:22.696600+00:00",
+      "finish": "2026-11-01T22:42:48.484425+00:00"
+    },
+    "state": "stopped",
+    "script_execution": "finished"
+  },
+  "verification": "26 focused tests pass, including all four fall lamp-post slots, Christmas lamp-post slot and midnight off coverage. Existing 17 lights and visitor timing unchanged.",
+  "runtime_note": "The updated fall controller completed its automation_reloaded recovery run successfully at 22:42:48Z. Later reload events were ignored by single mode while that same run was active, as intended. The original natural sunset run at 21:40:19Z also finished successfully."
+}

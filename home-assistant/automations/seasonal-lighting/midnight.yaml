@@ -1,0 +1,20 @@
+id: '1750643944980'
+alias: '[Light] : [Front Yard] : [At Specific Time] : [Turn Off Ambient Lighting]'
+description: Midnight shutoff for the core front-yard Hue groups, front-door lanterns and lamp post. Lamp post added
+  November 1, 2026 after Tom's sunset review.
+triggers:
+- at: 00:00:00
+  trigger: time
+conditions: []
+actions:
+- action: light.turn_off
+  metadata: {}
+  data: {}
+  target:
+    entity_id:
+    - light.front_yard_hue_lily_lights
+    - light.outdoor_front_porch_lights
+    - light.front_yard_hue_calla_lights
+    - light.downstairs_front_door_inovelli_on_off
+    - light.front_yard_lamp_post_hue_edison
+mode: single

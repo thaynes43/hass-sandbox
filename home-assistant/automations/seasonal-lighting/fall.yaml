@@ -1,9 +1,9 @@
 id: '1793559895239'
 alias: '[Light] : [Front Yard] : [Sun Sets] : [Colors of Fall]'
 description: '2026 Colors of Fall: Nov 1-7 amber/gold/orange; Nov 8-14 copper/burgundy; Nov 15-21 evergreen accents;
-  Nov 22-26 final autumn blend. Thanksgiving Nov 26 is the final fall night. Only 8 Calla, 6 Lily and 3 porch Hue
-  lights; Zooz outlets, Hue strings and lamp post excluded. Existing midnight ambient shutoff remains. Yields to
-  ordinary sunset lighting or Get Jolly. Local HA timezone.'
+  Nov 22-26 final autumn blend. Thanksgiving Nov 26 is the final fall night. 8 Calla, 6 Lily, 3 porch Hue lights
+  and the lamp post. Lamp post stays on gold/copper (never evergreen). Zooz outlets and Hue strings excluded. Existing
+  midnight ambient shutoff remains. Yields to ordinary sunset lighting or Get Jolly. Local HA timezone.'
 triggers:
 - trigger: sun.sunset
   id: sunset
@@ -143,6 +143,9 @@ variables:
   - entity_id: light.outdoor_front_porch_hue_recessed_03
     color: 2
     brightness: 65
+  - entity_id: light.front_yard_lamp_post_hue_edison
+    color: 1
+    brightness: 75
 mode: single
 trace:
   stored_traces: 10

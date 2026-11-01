@@ -51,16 +51,33 @@ def test_calendar_boundary(date, fall, christmas, week):
 
 
 @pytest.mark.parametrize('name', ['fall', 'christmas'])
-def test_only_the_17_core_lights_are_selected(name):
+def test_only_the_core_lights_and_lamp_post_are_selected(name):
     lights = CONFIGS[name]['variables']['seasonal_lights']
     expected = {
         f'light.front_yard_{side}_hue_{kind}_{n:02d}'
         for side in ('left', 'right')
         for kind, count in [('calla', 4), ('lily', 3)]
         for n in range(1, count + 1)
-    } | {f'light.outdoor_front_porch_hue_recessed_{n:02d}' for n in range(1, 4)}
+    } | {f'light.outdoor_front_porch_hue_recessed_{n:02d}' for n in range(1, 4)} | {
+        'light.front_yard_lamp_post_hue_edison'
+    }
     assert {light['entity_id'] for light in lights} == expected
-    assert len(lights) == len(expected) == 17
+    assert len(lights) == len(expected) == 18
+
+
+@pytest.mark.parametrize('name', ['fall', 'christmas'])
+def test_lamp_post_keeps_warm_colors_in_every_palette_and_shuts_off_at_midnight(name):
+    config = CONFIGS[name]
+    lamp = next(light for light in config['variables']['seasonal_lights']
+                if light['entity_id'] == 'light.front_yard_lamp_post_hue_edison')
+    palettes = config['variables'].get('palettes', [config['variables'].get('palette')])
+    for palette in palettes:
+        hue, saturation = palette[lamp['color']]
+        assert 20 <= hue <= 60  # Copper through warm gold, never green.
+    midnight = yaml.safe_load(
+        (ROOT / 'home-assistant/automations/seasonal-lighting/midnight.yaml').read_text()
+    )
+    assert lamp['entity_id'] in midnight['actions'][0]['target']['entity_id']
 
 
 @pytest.mark.parametrize('name', ['fall', 'christmas', 'visitor'])

@@ -3,12 +3,15 @@
 Live Home Assistant configuration mirrors, installed November 1, 2026 for
 [OpenProject story #348](https://work.haynesnetwork.com/projects/haynes-engineering/work_packages/348),
 under epic #347 and saga #346. No copy/paste or HA restart is required.
+The now-online lamp post was added after Tom's sunset review in
+[story #352](https://work.haynesnetwork.com/projects/haynes-engineering/work_packages/352).
 
 | Mirror | Live entity | Installed state |
 | --- | --- | --- |
 | `fall.yaml` | `automation.light_front_yard_sun_sets_colors_of_fall` | Enabled; November 1–26, 2026 |
 | `christmas.yaml` | `automation.light_front_yard_sun_sets_christmas_colors` | Enabled; eligible November 27, 2026 onward |
 | `visitor.yaml` | `automation.light_front_door_seasonal_visitor_turn_on_lanterns` | Enabled; visitor-only lanterns |
+| `midnight.yaml` | `automation.light_front_yard_at_specific_time_turn_off_ambient_lighting` | Enabled; midnight off including lamp post |
 
 ## Palettes and schedule
 
@@ -26,11 +29,17 @@ dates, not a recurring annual holiday scheduler.
 
 Both color controllers run at sunset and recover after HA startup or automation
 reload only during the evening, before midnight. Each sets eight Callas, six Lilys
-and three porch recessed lights individually, using five-second fades and two
+and three porch recessed lights plus the lamp post individually, using five-second fades and two
 paced passes to handle the existing Hue mesh's occasional missed commands.
 Unavailable lights are skipped so one offline bulb does not block the rest.
 
-No new routine commands the Zooz yard outlets, Hue string lights, lamp post,
+The lamp post uses the gold/copper palette slot throughout fall and warm gold
+in Christmas Colors; it never receives the evergreen/green palette slot.
+It was initially unavailable and excluded, but Tom's sunset review confirmed it
+was online and still green. Its live color was corrected and its sunset and
+midnight coverage added at that point.
+
+No new routine commands the Zooz yard outlets, Hue string lights,
 porch trees or Twinkly decorations. Tom excluded the Zooz outlets and Hue strings
 for Colors of Fall; their potential return belongs to his later Get Jolly review.
 
@@ -52,7 +61,7 @@ These four Halloween automations were turned off, with their configs retained:
 - `automation.switch_front_yard_at_specific_time_turn_off` (the Halloween 02:00 outlet routine)
 
 `automation.light_front_yard_at_specific_time_turn_off_ambient_lighting` remains
-enabled: its midnight action covers all 17 core lights and the front-door lanterns.
+enabled: its midnight action covers all 17 core lights, the lamp post and front-door lanterns.
 Ordinary ambient sunset lighting and Get Jolly remain disabled. The separate
 Twinkly midnight-off automation also remains disabled.
 
@@ -71,10 +80,14 @@ hue/saturation and brightness matched, within Hue conversion rounding. Both
 runs finished without an error. A transient scene snapshot restored the daytime
 off baseline afterward; the Christmas restore needed one retry for two Callas.
 Weekly boundaries and the November 26/27 handoff were also rendered in live HA.
-All 24 focused checks passed, including fake-time visitor race, repeat detection,
+The original 24 focused checks passed, including fake-time visitor race, repeat detection,
 long presence, takeover and midnight cancellation scenarios. Independent native
 review found two visitor timing issues; both were fixed and rereview passed
 without remaining substantive findings.
+The lamp-post correction passed 26 focused checks, including every fall week's
+lamp-post color, the Christmas slot and midnight coverage. Live readback confirmed
+warm gold at 75% brightness. The original 17-light evidence remains historical;
+the current seasonal inventory contains 18 lights.
 
 Run calendar, device-selection and takeover/recovery checks with:
 
