@@ -45,6 +45,8 @@ dawn. It is excluded from HA midnight shutoff and has no availability-triggered
 forced-on routine. Do not change this established behavior for a seasonal scene.
 Seasonal palette actions recolor the lamp only when it is already on; an off
 lamp is left off, including during HA startup or automation reload.
+Calendar/night/takeover conditions are rechecked before each command so a pass
+started before midnight cannot relight the other bulbs after their shutoff.
 
 The lamp post uses its own deeper amber palette slot throughout fall and
 Christmas Colors. The four shared palette slots remain unchanged; it never

@@ -109,6 +109,9 @@ def test_recovery_cannot_relight_after_midnight(name):
     conditions = CONFIGS[name]['conditions']
     assert {'condition': 'sun.is_set'} in conditions
     assert {'condition': 'time', 'after': '12:00:00'} in conditions
+    # A pass begun before midnight must not relight core bulbs after shutoff.
+    command_guards = CONFIGS[name]['actions'][0]['repeat']['sequence'][0]['repeat']['sequence'][0]['if']
+    assert all(condition in command_guards for condition in conditions)
 
 
 # Reuse the repo's small configuration executor rather than a second scheduler.
