@@ -1,12 +1,24 @@
 # Hue power-on behavior (Zigbee2MQTT)
 
 Ruling (Tom, 2026-08-30): after a power loss every Hue bulb restores its
-**previous state**. Four deliberate exceptions. Three stay `on`: the kids'
-nightstands `upstairs_blue_room_nightstand_hue_bulb_jackson` and
-`upstairs_pink_room_nightstand_hue_bulb_penelope`, and the photocell-fed
-`front_yard_lamp_post_hue_edison` (every dusk is a power-on for it). One is
-left unset: `outdoor_hue_string_lights_01`, seasonal decor. Third Reality
+**previous state**. The kids' nightstands stay `on`:
+`upstairs_blue_room_nightstand_hue_bulb_jackson` and
+`upstairs_pink_room_nightstand_hue_bulb_penelope`. One is left unset:
+`outdoor_hue_string_lights_01`, seasonal decor. Third Reality
 night lights are not Hue and are outside this ruling.
+
+Lamp-post clarification (Tom, 2026-11-03 UTC): seasonal scene changes must
+preserve its established photocell behavior. `front_yard_lamp_post_hue_edison`
+uses `previous` power-on behavior and is **excluded from HA midnight shutoff**.
+It stays on until the photocell cuts power at dawn; at dusk it restores on.
+Keep its existing color/brightness restoration settings when changing palettes.
+This supersedes the older lamp-post `on` exception. The lamp remains excluded
+from bulk normalization along with the other specially handled devices above.
+
+The November seasonal work added midnight shutoff unnecessarily. With `previous`,
+that caused the next dusk power-up to restore off. Removing that shutoff and
+restoring `previous` corrects the regression; do not compensate by changing its
+power-on policy or adding an availability-based forced-on automation.
 
 ## The gotcha: the HA select only covers on/off
 

@@ -8,15 +8,16 @@ The now-online lamp post was added after Tom's sunset review in
 Tom's household requested a warmer lamp-post color afterward in
 [story #353](https://work.haynesnetwork.com/projects/haynes-engineering/work_packages/353):
 the current setting is deeper amber (HS 28/100) at 75% brightness.
-An unavailable-at-sunset incident was corrected in
-[story #363](https://work.haynesnetwork.com/projects/haynes-engineering/work_packages/363).
+The lamp-post operating behavior was restored in
+[story #365](https://work.haynesnetwork.com/projects/haynes-engineering/work_packages/365).
+Seasonal palettes change its color, not its photocell schedule or power-on policy.
 
 | Mirror | Live entity | Installed state |
 | --- | --- | --- |
 | `fall.yaml` | `automation.light_front_yard_sun_sets_colors_of_fall` | Enabled; November 1–26, 2026 |
 | `christmas.yaml` | `automation.light_front_yard_sun_sets_christmas_colors` | Enabled; eligible November 27, 2026 onward |
 | `visitor.yaml` | `automation.light_front_door_seasonal_visitor_turn_on_lanterns` | Enabled; visitor-only lanterns |
-| `midnight.yaml` | `automation.light_front_yard_at_specific_time_turn_off_ambient_lighting` | Enabled; midnight off including lamp post |
+| `midnight.yaml` | `automation.light_front_yard_at_specific_time_turn_off_ambient_lighting` | Enabled; core lights and lanterns only; lamp post excluded |
 
 ## Palettes and schedule
 
@@ -37,20 +38,23 @@ reload only during the evening, before midnight. Each sets eight Callas, six Lil
 and three porch recessed lights plus the lamp post individually, using five-second fades and two
 paced passes to handle the existing Hue mesh's occasional missed commands.
 Unavailable lights are skipped so one offline bulb does not block the rest.
-If the lamp post returns from `unavailable`/`unknown` to `off` later in the
-evening, an availability trigger reapplies only its amber setting. It retains
-the same season, takeover and before-midnight conditions. A normal manual
-`on` to `off` does not trigger recovery. Runs are queued (maximum three) so
-availability recovery is not lost during a sunset pass and does not cancel
-the remaining lights in that pass.
+The lamp post has its own photocell, so daytime unavailability and a dusk
+power-up that does not align exactly with HA sunset are expected. It retains
+`previous` power-on behavior and stays on until the photocell cuts power at
+dawn. It is excluded from HA midnight shutoff and has no availability-triggered
+forced-on routine. Do not change this established behavior for a seasonal scene.
+Seasonal palette actions recolor the lamp only when it is already on; an off
+lamp is left off, including during HA startup or automation reload.
 
 The lamp post uses its own deeper amber palette slot throughout fall and
 Christmas Colors. The four shared palette slots remain unchanged; it never
 receives the evergreen/green slot. The earlier yellow-gold setting was too cool
 for the household, so its dedicated swatch is now HS 28/100 at 75% brightness.
 It was initially unavailable and excluded, but Tom's sunset review confirmed it
-was online and still green. Its live color was corrected and its sunset and
-midnight coverage added at that point.
+was online and still green. Its live color was corrected. The midnight shutoff
+added at that point was a regression: `previous` then restored the off state at
+the next dusk. That added shutoff and the later recovery/on-mode workarounds
+have been removed; the warmer amber remains.
 
 No new routine commands the Zooz yard outlets, Hue string lights,
 porch trees or Twinkly decorations. Tom excluded the Zooz outlets and Hue strings
@@ -74,7 +78,8 @@ These four Halloween automations were turned off, with their configs retained:
 - `automation.switch_front_yard_at_specific_time_turn_off` (the Halloween 02:00 outlet routine)
 
 `automation.light_front_yard_at_specific_time_turn_off_ambient_lighting` remains
-enabled: its midnight action covers all 17 core lights, the lamp post and front-door lanterns.
+enabled: its midnight action covers all 17 core lights and front-door lanterns.
+The lamp post is excluded, as it was before the seasonal color changes.
 Ordinary ambient sunset lighting and Get Jolly remain disabled. The separate
 Twinkly midnight-off automation also remains disabled.
 
@@ -97,10 +102,14 @@ The original 24 focused checks passed, including fake-time visitor race, repeat 
 long presence, takeover and midnight cancellation scenarios. Independent native
 review found two visitor timing issues; both were fixed and rereview passed
 without remaining substantive findings.
-The lamp-post correction passed 26 focused checks, including every fall week's
-lamp-post color, the Christmas slot and midnight coverage. Live readback confirmed
-warm gold at 75% brightness. The original 17-light evidence remains historical;
-the current seasonal inventory contains 18 lights.
+The current 32 focused checks cover every fall week's lamp-post amber color,
+the Christmas slot, exclusion from midnight shutoff and absence of lamp-post
+availability triggers, and recoloring without switching an off lamp on.
+Direct Zigbee readback confirmed `startUpOnOff: 255`
+(`previous`), with current amber HS 28.471/100 and brightness 191/255 (75%).
+The original 17-light evidence and intermediate lamp-post/recovery evidence
+remain historical; they do not describe the current lamp-post operating policy.
+The current seasonal palette inventory contains 18 lights.
 
 Run calendar, device-selection and takeover/recovery checks with:
 
