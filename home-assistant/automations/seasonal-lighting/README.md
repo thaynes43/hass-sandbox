@@ -8,6 +8,8 @@ The now-online lamp post was added after Tom's sunset review in
 Tom's household requested a warmer lamp-post color afterward in
 [story #353](https://work.haynesnetwork.com/projects/haynes-engineering/work_packages/353):
 the current setting is deeper amber (HS 28/100) at 75% brightness.
+An unavailable-at-sunset incident was corrected in
+[story #363](https://work.haynesnetwork.com/projects/haynes-engineering/work_packages/363).
 
 | Mirror | Live entity | Installed state |
 | --- | --- | --- |
@@ -35,6 +37,12 @@ reload only during the evening, before midnight. Each sets eight Callas, six Lil
 and three porch recessed lights plus the lamp post individually, using five-second fades and two
 paced passes to handle the existing Hue mesh's occasional missed commands.
 Unavailable lights are skipped so one offline bulb does not block the rest.
+If the lamp post returns from `unavailable`/`unknown` to `off` later in the
+evening, an availability trigger reapplies only its amber setting. It retains
+the same season, takeover and before-midnight conditions. A normal manual
+`on` to `off` does not trigger recovery. Runs are queued (maximum three) so
+availability recovery is not lost during a sunset pass and does not cancel
+the remaining lights in that pass.
 
 The lamp post uses its own deeper amber palette slot throughout fall and
 Christmas Colors. The four shared palette slots remain unchanged; it never

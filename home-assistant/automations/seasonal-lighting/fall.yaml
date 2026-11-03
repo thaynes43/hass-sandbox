@@ -4,7 +4,8 @@ description: '2026 Colors of Fall: Nov 1-7 amber/gold/orange; Nov 8-14 copper/bu
   Nov 22-26 final autumn blend. Thanksgiving Nov 26 is the final fall night. 8 Calla, 6 Lily, 3 porch Hue lights
   and the lamp post. Lamp post uses its own warmer amber swatch (HS28/100), never evergreen. Zooz outlets and Hue
   strings excluded. Existing midnight ambient shutoff remains. Yields to ordinary sunset lighting or Get Jolly.
-  Local HA timezone.'
+  Local HA timezone. If the lamp post recovers from unavailable/unknown to off after sunset but before midnight,
+  reapply only its amber setting. Manual on-to-off is not a recovery trigger.'
 triggers:
 - trigger: sun.sunset
   id: sunset
@@ -14,6 +15,13 @@ triggers:
 - trigger: event
   event_type: automation_reloaded
   id: recovery
+- trigger: state
+  entity_id: light.front_yard_lamp_post_hue_edison
+  from:
+  - unavailable
+  - unknown
+  to: 'off'
+  id: lamp_recovered
 conditions:
 - condition: template
   value_template: '{{ ''2026-11-01'' <= now().strftime(''%Y-%m-%d'') <= ''2026-11-26'' }}'
@@ -32,15 +40,20 @@ actions:
     count: 2
     sequence:
     - repeat:
-        for_each: '{{ seasonal_lights }}'
+        for_each: '{{ active_lights }}'
         sequence:
         - if:
+          - condition: template
+            value_template: '{{ ''2026-11-01'' <= now().strftime(''%Y-%m-%d'') <= ''2026-11-26'' }}'
           - condition: state
             entity_id: automation.light_front_yard_sun_sets_during_christmas_get_jolly
             state: 'off'
           - condition: state
             entity_id: automation.light_front_yard_at_sunset_turn_on
             state: 'off'
+          - condition: sun.is_set
+          - condition: time
+            after: '12:00:00'
           - condition: template
             value_template: '{{ has_value(repeat.item.entity_id) }}'
           then:
@@ -155,6 +168,9 @@ variables:
   - entity_id: light.front_yard_lamp_post_hue_edison
     color: 4
     brightness: 75
-mode: single
+  active_lights: '{{ seasonal_lights | selectattr(''entity_id'', ''eq'', trigger.entity_id) | list if trigger is
+    defined and trigger.id | default('''') == ''lamp_recovered'' else seasonal_lights }}'
+mode: queued
 trace:
   stored_traces: 10
+max: 3
