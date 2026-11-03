@@ -95,6 +95,39 @@ def test_recovery_cannot_relight_after_midnight(name):
     conditions = CONFIGS[name]['conditions']
     assert {'condition': 'sun.is_set'} in conditions
     assert {'condition': 'time', 'after': '12:00:00'} in conditions
+    # Queued runs must recheck at execution, even if enqueued before midnight.
+    step_guards = CONFIGS[name]['actions'][0]['repeat']['sequence'][0]['repeat']['sequence'][0]['if']
+    assert all(condition in step_guards for condition in conditions)
+
+
+@pytest.mark.parametrize('name', ['fall', 'christmas'])
+@pytest.mark.parametrize('old_state', ['unavailable', 'unknown', 'on', 'off'])
+def test_only_an_offline_lamp_returning_off_starts_availability_recovery(name, old_state):
+    triggers = [t for t in CONFIGS[name]['triggers'] if t.get('entity_id') ==
+                'light.front_yard_lamp_post_hue_edison']
+    matching = [t for t in triggers if old_state in t.get('from', []) and t.get('to') == 'off']
+    assert bool(matching) is (old_state in ['unavailable', 'unknown'])
+
+
+@pytest.mark.parametrize('name', ['fall', 'christmas'])
+@pytest.mark.parametrize('trigger', [None, {'id': 'sunset'}, {'id': 'recovery'},
+    {'id': 'lamp_recovered', 'entity_id': 'light.front_yard_lamp_post_hue_edison'}])
+def test_availability_recovery_only_selects_the_lamp_but_normal_runs_select_all_lights(name, trigger):
+    variables = CONFIGS[name]['variables']
+    lights = render(variables['active_lights'], '2026-11-02T17:00:00-05:00',
+                    seasonal_lights=variables['seasonal_lights'], trigger=trigger)
+    expected = variables['seasonal_lights']
+    if trigger and trigger['id'] == 'lamp_recovered':
+        expected = [light for light in expected if light['entity_id'] == trigger['entity_id']]
+    assert lights == expected
+    if trigger and trigger['id'] == 'lamp_recovered':
+        assert len(lights) == 1
+
+
+@pytest.mark.parametrize('name', ['fall', 'christmas'])
+def test_recovery_is_queued_instead_of_lost_or_cancelling_the_sunset_pass(name):
+    assert CONFIGS[name]['mode'] == 'queued'
+    assert CONFIGS[name]['max'] == 3
 
 
 # Reuse the repo's small configuration executor rather than a second scheduler.
