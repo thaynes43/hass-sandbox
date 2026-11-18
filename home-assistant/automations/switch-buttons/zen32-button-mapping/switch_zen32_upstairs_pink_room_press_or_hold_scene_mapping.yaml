@@ -82,3 +82,7 @@ use_blueprint:
     on_color3: "1"
     on_color2: "1"
     on_color1: "1"
+    off_state1: "3"
+    off_state2: "3"
+    off_state3: "3"
+    off_state4: "3"
