@@ -77,8 +77,16 @@ If Home Assistant shows the smart switch’s SwitchType selector as Aux, we trea
 
 **Implementation source (current)**
 
-- Blueprint: `blueprints/ZEN32-control-track.yaml`
+- Blueprint: `blueprints/ZEN32-control-track.yaml` (upstream rwalker777 v2026.9.5, installed 2026-11-18)
 - Automations: `automations/switch-buttons/zen32-button-mapping/*.yaml`
+
+**LED state tracking (all 7 ZEN32s, 2026-11-18)**
+
+- Every button LED follows its tracked entity: the big button follows its light, the others follow the fan or shade. The big button needs `track_relay0: "99"` (the blueprint calls it "Disabled", meaning do not track the relay). With the default `"0"`, v2026.9.x leaves the big-button LED to the device, and in smart-bulb mode (`p19_relay_control: "0"`) it stays off.
+- Brightness inputs use the named values: `low`, `medium` or `bright`, all `low` today. The blueprint maps a name to the device's scale: `low` is 2 on the legacy 0–2 scale and 3 on the 1–10 scale. It uses the 1–10 scale only when the device model is "ZEN32 800LR" or "ZEN35". All 7 report as "ZEN32", the cloffice one included (firmware 3.30). Do not use raw numbers. They pass through unmapped, so a `"2"` would be nearly off on a 1–10 device.
+- Only the primary bedroom uses a night entity (`sun.sun`). Set `night_led_brightness` with the named values (`low`/`medium`/`bright`). With v2026.9.5, the old numeric `"2"` resolves to "no change", and the blueprint then sends 99 as a brightness value, which the device rejects (SetValueFailed, seen 2026-11-18).
+- Before v2026.9.3, every `sun.sun` attribute update rewrote all 12 bedroom LED parameters, about 2,600 Z-Wave writes a day. That is fixed upstream; tracker story 886.
+- Every automation reload anywhere in HA fires `automation_reloaded`. That makes each ZEN32 automation push its LED and relay parameters once, roughly 15 writes per controller.
 
 ### Zooz ZEN37 (battery scene controller)
 
