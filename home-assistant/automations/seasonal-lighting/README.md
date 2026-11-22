@@ -52,15 +52,16 @@ red / green / warm-gold palette from Christmas Colors (HS 0/100, 120/100, 45/45)
 | --- | --- | --- |
 | `scene.hue_calla_christmas` | each side: red, green, gold, red | 217 (85%) |
 | `scene.hue_lily_christmas` | left: gold, red, green · right: green, red, gold | 230 (90%) |
-| `scene.front_porch_recessed_lights_christmas` | red, green, gold | 166 (65%) |
+| `scene.front_porch_recessed_lights_christmas` | red, warm white (HS 40/15), red: brightest and lightest in the middle (Tom) | 166 / 255 / 166 |
 
-The lamp post keeps the household's warm amber (HS 28/100, 75%).
+The lamp post is warm white (2700 K, 75%) for Get Jolly. Tom said the fall amber read as orange. Fall and
+Christmas Colors still use the amber.
 
 Changes from last year's Get Jolly:
 - It no longer turns the front-door lanterns on. They stay visitor-only, and the
   visitor automation no longer yields to Get Jolly.
 - It never uses `scene.lamp_post_christmas`, which would force the lamp post on in
-  the old yellow-gold. The lamp post is recolored to amber HS 28/100 at 75% only
+  the old yellow-gold. The lamp post is set to warm white 2700 K at 75% only
   when it is already on.
 - The Twinkly midnight-off automation now covers all seven outdoor devices.
 
@@ -183,7 +184,7 @@ was made.
 
 Since story #946 (November 22, 2026), the suite has 36 checks. They also cover
 these Get Jolly rules: Twinkly starts in movie mode, its on and off lists match,
-the lanterns are left alone, the lamp post is recolored only when it is on, and
+the lanterns are left alone, the lamp post gets warm white only when it is on, and
 the visitor lanterns keep working.
 Visitor lighting runs while any seasonal controller is enabled: Colors of Fall,
 Christmas Colors or Get Jolly.

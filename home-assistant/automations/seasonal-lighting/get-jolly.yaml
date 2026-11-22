@@ -4,9 +4,9 @@ description: '2026 Get Jolly (Tom, 2026-11-22). At sunset, and on HA start/autom
   Christmas scenes to the Calla, Lily and porch recessed Hue lights and starts the 7 outdoor Twinkly lights in movie mode
   (the scene chosen in the Twinkly app) (Shrubs, Corner Tree, Doe, Stag, Light Tree, Oak, Cherry Blossom). Two paced passes
   catch Hue mesh misses. The front-door lanterns are left to the visitor-only automation. The lamp post keeps its photocell
-  schedule and previous-state power-on, and is recolored to warm amber HS28/100 at 75% only if it is already on. Midnight
-  off: the ambient-lighting shutoff (Hue) plus the Twinkly turn-off. Enabling this makes Colors of Fall and Christmas Colors
-  yield.'
+  schedule and previous-state power-on, and is set to Christmas warm white 2700 K at 75% only if it is already on (Tom, 2026-11-22;
+  the fall amber read as orange). Midnight off: the ambient-lighting shutoff (Hue) plus the Twinkly turn-off. Enabling this
+  makes Colors of Fall and Christmas Colors yield.'
 triggers:
 - trigger: sun
   event: sunset
@@ -49,9 +49,7 @@ actions:
         target:
           entity_id: light.front_yard_lamp_post_hue_edison
         data:
-          hs_color:
-          - 28
-          - 100
+          color_temp_kelvin: 2700
           brightness_pct: 75
           transition: 5
         continue_on_error: true
