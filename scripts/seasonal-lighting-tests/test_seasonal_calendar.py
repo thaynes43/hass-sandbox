@@ -255,7 +255,7 @@ def test_get_jolly_never_touches_lanterns_and_only_recolors_an_on_lamp_post():
     lamp_step = next(s for s in _jolly_pass() if 'if' in s)
     assert lamp_step['if'] == [{'condition': 'state', 'entity_id': LAMP, 'state': 'on'}]
     data = lamp_step['then'][0]['data']
-    assert (data['hs_color'], data['brightness_pct']) == ([28, 100], 75)
+    assert (data['color_temp_kelvin'], data['brightness_pct']) == (2700, 75)
     # The lamp post appears nowhere else (no scene for it, no turn_off, no availability trigger).
     assert text.count(LAMP) == 2
 
