@@ -67,8 +67,13 @@ Changes from last year's Get Jolly:
 
 The Twinkly config entries are disabled between seasons. They were re-enabled
 on November 22, 2026. The living room Balsam Hill tree and garland entries were
-re-enabled too. Their 06:00-on/01:00-off "Holiday Cheer" automations remain off,
-pending the indoor timing review in story #946.
+re-enabled too. Their "Holiday Cheer" automations were turned on November 22, 2026 (Tom):
+`automation.light_livingroom_sun_sets_spread_holiday_cheer` starts both in movie mode at 06:00
+daily. It now uses `select.select_option` for the same reason as Get Jolly; its disabled 15:00
+weekday trigger is unchanged. `automation.light_livingroom_specific_time_suspend_holiday_cheer`
+turns them off at 01:00. These indoor automations are live-only; their configs are not mirrored
+here. Decorations on the dining room Zooz power strip are a separate story,
+[#947](https://work.haynesnetwork.com/projects/haynes-engineering/work_packages/947).
 
 ## Palettes and schedule
 
