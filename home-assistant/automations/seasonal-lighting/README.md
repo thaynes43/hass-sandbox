@@ -27,8 +27,11 @@ Tom moved to Get Jolly on November 22, 2026
 ([story #946](https://work.haynesnetwork.com/projects/haynes-engineering/work_packages/946)).
 At sunset, and on HA start or automation reload during the evening, it applies
 the existing `scene.hue_calla_christmas`, `scene.hue_lily_christmas` and
-`scene.front_porch_recessed_lights_christmas` scenes. It also turns on the
-seven outdoor Twinkly lights. It makes two passes, 10 s apart.
+`scene.front_porch_recessed_lights_christmas` scenes. It also starts the
+seven outdoor Twinkly lights in **movie** mode, which plays the scene chosen in the
+Twinkly app. Never start Twinkly with `light.turn_on`: that switches it to
+realtime color mode, which drops the app scene and turns off after about a
+minute (this happened on 2026-11-22). It makes two passes, 10 s apart.
 
 | Twinkly entity | Device name in the Twinkly app | Notes |
 | --- | --- | --- |
@@ -92,9 +95,11 @@ added at that point was a regression: `previous` then restored the off state at
 the next dusk. That added shutoff and the later recovery/on-mode workarounds
 have been removed; the warmer amber remains.
 
-No new routine commands the Zooz yard outlets, Hue string lights,
-porch trees or Twinkly decorations. Tom excluded the Zooz outlets and Hue strings
-for Colors of Fall; their potential return belongs to his later Get Jolly review.
+The fall and Christmas Colors routines never command the Zooz yard outlets, Hue
+string lights, porch trees or Twinkly decorations. Tom excluded the Zooz outlets
+and Hue strings for Colors of Fall. Since November 22, 2026, Get Jolly commands
+the porch trees and the other outdoor Twinkly lights (see above). The Zooz
+outlets and Hue strings are still not commanded.
 
 The front-door lanterns stay off until a visitor is detected or the doorbell is
 pressed after dark. They turn off after three clear minutes; a doorbell press
@@ -137,7 +142,7 @@ The original 24 focused checks passed, including fake-time visitor race, repeat 
 long presence, takeover and midnight cancellation scenarios. Independent native
 review found two visitor timing issues; both were fixed and rereview passed
 without remaining substantive findings.
-The current 32 focused checks cover every fall week's lamp-post amber color,
+The 32 focused checks at the time cover every fall week's lamp-post amber color,
 the Christmas slot, exclusion from midnight shutoff and absence of lamp-post
 availability triggers, and recoloring without switching an off lamp on.
 Direct Zigbee readback confirmed `startUpOnOff: 255`
@@ -162,3 +167,16 @@ Not verified by the daytime test: an actual sunset event or physical camera/
 doorbell visitor. No sensor states were forged. The future November 27 calendar
 date was evaluated without changing HA's clock. No cluster or AppDaemon change
 was made.
+
+Since story #946 (November 22, 2026), the suite has 36 checks. They also cover
+these Get Jolly rules: Twinkly starts in movie mode, its on and off lists match,
+the lanterns are left alone, the lamp post is recolored only when it is on, and
+the visitor lanterns keep working.
+Visitor lighting runs while any seasonal controller is enabled: Colors of Fall,
+Christmas Colors or Get Jolly.
+The `scene.*_christmas` scenes are not mirrored in the repo. Their live contents
+are limited to the 8 Callas, 6 Lilys and 3 porch recessed lights. That was checked
+on November 22, 2026. Recheck it if the scenes change.
+To roll back Get Jolly, disable `automation.light_front_yard_sun_sets_during_christmas_get_jolly`
+and `automation.light_front_yard_at_specific_time_turn_off_twinkly`. Fall and
+Christmas Colors then resume on their own date gates.

@@ -1,11 +1,12 @@
 id: '1763937833943'
 alias: '[Light] : [Front Yard] : [Sun Sets During Christmas] : [Get Jolly]'
 description: '2026 Get Jolly (Tom, 2026-11-22). At sunset, and on HA start/automation reload during the evening, applies the
-  Christmas scenes to the Calla, Lily and porch recessed Hue lights and turns on the 7 outdoor Twinkly lights (Shrubs, Corner
-  Tree, Doe, Stag, Light Tree, Oak, Cherry Blossom). Two paced passes catch Hue mesh misses. The front-door lanterns are left
-  to the visitor-only automation. The lamp post keeps its photocell schedule and previous-state power-on, and is recolored
-  to warm amber HS28/100 at 75% only if it is already on. Midnight off: the ambient-lighting shutoff (Hue) plus the Twinkly
-  turn-off. Enabling this makes Colors of Fall and Christmas Colors yield.'
+  Christmas scenes to the Calla, Lily and porch recessed Hue lights and starts the 7 outdoor Twinkly lights in movie mode
+  (the scene chosen in the Twinkly app) (Shrubs, Corner Tree, Doe, Stag, Light Tree, Oak, Cherry Blossom). Two paced passes
+  catch Hue mesh misses. The front-door lanterns are left to the visitor-only automation. The lamp post keeps its photocell
+  schedule and previous-state power-on, and is recolored to warm amber HS28/100 at 75% only if it is already on. Midnight
+  off: the ambient-lighting shutoff (Hue) plus the Twinkly turn-off. Enabling this makes Colors of Fall and Christmas Colors
+  yield.'
 triggers:
 - trigger: sun
   event: sunset
@@ -54,16 +55,23 @@ actions:
           brightness_pct: 75
           transition: 5
         continue_on_error: true
-    - action: light.turn_on
+    - alias: Recheck midnight right before starting Twinkly
+      condition: time
+      after: '12:00:00'
+    - alias: Play the movie chosen in the Twinkly app; light.turn_on would switch Twinkly to realtime color mode, which times
+        out
+      action: select.select_option
       target:
         entity_id:
-        - light.front_porch_left_tree_lights
-        - light.front_porch_right_tree_lights
-        - light.front_yard_twinkly_doe
-        - light.front_yard_twinkly_stag
-        - light.front_yard_twinkly_light_tree
-        - light.front_yard_oak
-        - light.front_yard_cherry_blossom
+        - select.front_porch_left_tree_lights_mode
+        - select.front_porch_right_tree_lights_mode
+        - select.front_yard_twinkly_doe_mode
+        - select.front_yard_twinkly_stag_mode
+        - select.front_yard_twinkly_light_tree_mode
+        - select.front_yard_oak_mode
+        - select.front_yard_cherry_blossom_mode
+      data:
+        option: movie
       continue_on_error: true
     - delay:
         seconds: 10

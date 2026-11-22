@@ -235,8 +235,13 @@ def _jolly_pass():
 
 
 def test_get_jolly_turns_on_every_outdoor_twinkly_and_midnight_turns_them_off():
-    on = [s for s in _jolly_pass() if s.get('action') == 'light.turn_on']
-    assert on[0]['target']['entity_id'] == OUTDOOR_TWINKLY
+    # Twinkly must be started in movie mode: light.turn_on switches it to realtime
+    # color mode, which drops the app's scene and times out (2026-11-22 regression).
+    assert not any(s.get('action') == 'light.turn_on' and s['target']['entity_id'] != LAMP
+                   for s in _jolly_pass() if 'target' in s)
+    movie = next(s for s in _jolly_pass() if s.get('action') == 'select.select_option')
+    assert movie['data'] == {'option': 'movie'}
+    assert movie['target']['entity_id'] == [e.replace('light.', 'select.') + '_mode' for e in OUTDOOR_TWINKLY]
     off = CONFIGS['twinkly-midnight']['actions'][0]
     assert off['action'] == 'light.turn_off'
     assert off['target']['entity_id'] == OUTDOOR_TWINKLY
@@ -259,3 +264,13 @@ def test_get_jolly_is_evening_only_and_rechecks_each_pass():
     assert {'condition': 'sun', 'after': 'sunset'} in CONFIGS['get-jolly']['conditions']
     assert {'condition': 'time', 'after': '12:00:00'} in CONFIGS['get-jolly']['conditions']
     assert _jolly_pass()[0]['condition'] == 'time' and _jolly_pass()[0]['after'] == '12:00:00'
+
+
+def test_visitor_lanterns_run_under_get_jolly_alone():
+    # Fall and Christmas Colors may be disabled once Get Jolly supersedes them.
+    seasonal = next(c for c in CONFIGS['visitor']['conditions'] if c['condition'] == 'or')['conditions']
+    assert {'condition': 'state', 'entity_id': JOLLY, 'state': 'on'} in seasonal
+    seq = _jolly_pass()
+    movie = next(i for i, s in enumerate(seq) if s.get('action') == 'select.select_option')
+    assert seq[movie - 1] == {'alias': 'Recheck midnight right before starting Twinkly',
+                              'condition': 'time', 'after': '12:00:00'}

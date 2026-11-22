@@ -33,6 +33,9 @@ conditions:
   - condition: state
     entity_id: automation.light_front_yard_sun_sets_christmas_colors
     state: 'on'
+  - condition: state
+    entity_id: automation.light_front_yard_sun_sets_during_christmas_get_jolly
+    state: 'on'
 actions:
 - choose:
   - conditions:
