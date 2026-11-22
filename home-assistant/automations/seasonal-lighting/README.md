@@ -43,6 +43,19 @@ minute (this happened on 2026-11-22). It makes two passes, 10 s apart.
 | `light.front_yard_oak` | Front_Yard_Oak | New 2026, TWS250SPP2 |
 | `light.front_yard_cherry_blossom` | Front_Yard_Cherry_Blossom | New 2026, TWS250SPP2 |
 
+Tom asked for real Christmas colors on November 22, 2026, so the three
+`scene.*_christmas` scenes were recolored live. Last year's scenes used gold,
+orange, cream, teal and warm white, which read as fall. They now use the
+red / green / warm-gold palette from Christmas Colors (HS 0/100, 120/100, 45/45):
+
+| Scene | Lights (left → right) | Brightness |
+| --- | --- | --- |
+| `scene.hue_calla_christmas` | each side: red, green, gold, red | 217 (85%) |
+| `scene.hue_lily_christmas` | left: gold, red, green · right: green, red, gold | 230 (90%) |
+| `scene.front_porch_recessed_lights_christmas` | red, green, gold | 166 (65%) |
+
+The lamp post keeps the household's warm amber (HS 28/100, 75%).
+
 Changes from last year's Get Jolly:
 - It no longer turns the front-door lanterns on. They stay visitor-only, and the
   visitor automation no longer yields to Get Jolly.
