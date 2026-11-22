@@ -380,8 +380,9 @@ Defects found (open): `cover.kitchen_shade` unresponsive for ~3 days; Study shad
 wall displays call non-existent `scene.laundry_gateway_study_*` (real: `…_office_*`) in the live
 dashboards and the repo cards; foyer/kitchen night-light automations reference `binary_sensor.study_sensor_occupancy` /
 `…dining_room_sensor_occupancy` (real ids have an `ecobee_` prefix);
-`light.downstairs_foyer_night_light` is assigned to the Basement Hallway area; disabled holiday
-automations target removed Twinkly lights; all first-floor schedule automations are live-only. (Fixed 2026-10-18: the
-Mudroom switch's mmWave was "Occupancy (default)" while HA owned the load; it is now Disabled.)
+`light.downstairs_foyer_night_light` is assigned to the Basement Hallway area; all first-floor schedule automations are live-only. (Fixed 2026-10-18: the
+Mudroom switch's mmWave was "Occupancy (default)" while HA owned the load; it is now Disabled.
+Fixed 2026-11-22: the holiday automations' Twinkly lights were from disabled config entries, not removed devices;
+they were re-enabled for Get Jolly, see `home-assistant/automations/seasonal-lighting/README.md`.)
 Note: `floor_name(area_id)` returns None for areas whose id differs from their name — a template
 artifact, not a registry fault.

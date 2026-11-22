@@ -14,7 +14,7 @@ CONFIGS = {
     name: yaml.safe_load(
         (ROOT / 'home-assistant/automations/seasonal-lighting' / f'{name}.yaml').read_text()
     )
-    for name in ('fall', 'christmas', 'visitor')
+    for name in ('fall', 'christmas', 'visitor', 'get-jolly', 'twinkly-midnight')
 }
 
 
@@ -94,14 +94,20 @@ def test_a_seasonal_scene_only_recolors_the_lamp_when_it_is_already_on(name, lam
     assert render(guard, '2026-11-02T20:00:00-05:00', repeat=core, **values) is True
 
 
-@pytest.mark.parametrize('name', ['fall', 'christmas', 'visitor'])
+@pytest.mark.parametrize('name', ['fall', 'christmas'])
 def test_both_takeover_automations_block_new_runs(name):
-    # A future setup can take over by enabling either existing sunset controller.
+    # Enabling either existing sunset controller takes over from the interim palettes.
     guards = {c['entity_id']: c['state'] for c in CONFIGS[name]['conditions'] if c['condition'] == 'state'}
     assert guards == {
         'automation.light_front_yard_sun_sets_during_christmas_get_jolly': 'off',
         'automation.light_front_yard_at_sunset_turn_on': 'off',
     }
+
+
+def test_visitor_lanterns_keep_working_under_get_jolly():
+    # 2026 Get Jolly leaves the lanterns visitor-only; only ambient sunset lighting takes them over.
+    guards = {c['entity_id']: c['state'] for c in CONFIGS['visitor']['conditions'] if c['condition'] == 'state'}
+    assert guards == {'automation.light_front_yard_at_sunset_turn_on': 'off'}
 
 
 @pytest.mark.parametrize('name', ['fall', 'christmas'])
@@ -196,13 +202,13 @@ def test_person_presence_is_not_mistaken_for_a_clear_period():
     assert [call[0] for call in r.device_offs()] == [3780]
 
 
-def test_get_jolly_takeover_prevents_delayed_lantern_off():
+def test_get_jolly_does_not_strand_lanterns_on():
     r = Visitors()
     r.set(**{BELL: 'on'})
     r.advance(60)
     r.set(**{JOLLY: 'on'})
     r.advance(120)
-    assert not r.device_offs()
+    assert [call[0] for call in r.device_offs()] == [180]
 
 
 def test_midnight_cancels_a_pending_visitor_wait():
@@ -213,3 +219,43 @@ def test_midnight_cancels_a_pending_visitor_wait():
     r.drain()
     assert [call[0] for call in r.device_offs()] == [60]
     assert not r.running
+
+
+LAMP = 'light.front_yard_lamp_post_hue_edison'
+LANTERNS = 'light.downstairs_front_door_inovelli_on_off'
+OUTDOOR_TWINKLY = [
+    'light.front_porch_left_tree_lights', 'light.front_porch_right_tree_lights',
+    'light.front_yard_twinkly_doe', 'light.front_yard_twinkly_stag',
+    'light.front_yard_twinkly_light_tree', 'light.front_yard_oak', 'light.front_yard_cherry_blossom',
+]
+
+
+def _jolly_pass():
+    return CONFIGS['get-jolly']['actions'][0]['repeat']['sequence']
+
+
+def test_get_jolly_turns_on_every_outdoor_twinkly_and_midnight_turns_them_off():
+    on = [s for s in _jolly_pass() if s.get('action') == 'light.turn_on']
+    assert on[0]['target']['entity_id'] == OUTDOOR_TWINKLY
+    off = CONFIGS['twinkly-midnight']['actions'][0]
+    assert off['action'] == 'light.turn_off'
+    assert off['target']['entity_id'] == OUTDOOR_TWINKLY
+    assert CONFIGS['twinkly-midnight']['triggers'] == [{'at': '00:00:00', 'trigger': 'time'}]
+
+
+def test_get_jolly_never_touches_lanterns_and_only_recolors_an_on_lamp_post():
+    text = yaml.safe_dump(CONFIGS['get-jolly'])
+    assert LANTERNS not in text
+    assert LAMP not in yaml.safe_dump(CONFIGS['twinkly-midnight'])
+    lamp_step = next(s for s in _jolly_pass() if 'if' in s)
+    assert lamp_step['if'] == [{'condition': 'state', 'entity_id': LAMP, 'state': 'on'}]
+    data = lamp_step['then'][0]['data']
+    assert (data['hs_color'], data['brightness_pct']) == ([28, 100], 75)
+    # The lamp post appears nowhere else (no scene for it, no turn_off, no availability trigger).
+    assert text.count(LAMP) == 2
+
+
+def test_get_jolly_is_evening_only_and_rechecks_each_pass():
+    assert {'condition': 'sun', 'after': 'sunset'} in CONFIGS['get-jolly']['conditions']
+    assert {'condition': 'time', 'after': '12:00:00'} in CONFIGS['get-jolly']['conditions']
+    assert _jolly_pass()[0]['condition'] == 'time' and _jolly_pass()[0]['after'] == '12:00:00'

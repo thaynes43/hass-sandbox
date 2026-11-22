@@ -1,0 +1,72 @@
+id: '1763937833943'
+alias: '[Light] : [Front Yard] : [Sun Sets During Christmas] : [Get Jolly]'
+description: '2026 Get Jolly (Tom, 2026-11-22). At sunset, and on HA start/automation reload during the evening, applies the
+  Christmas scenes to the Calla, Lily and porch recessed Hue lights and turns on the 7 outdoor Twinkly lights (Shrubs, Corner
+  Tree, Doe, Stag, Light Tree, Oak, Cherry Blossom). Two paced passes catch Hue mesh misses. The front-door lanterns are left
+  to the visitor-only automation. The lamp post keeps its photocell schedule and previous-state power-on, and is recolored
+  to warm amber HS28/100 at 75% only if it is already on. Midnight off: the ambient-lighting shutoff (Hue) plus the Twinkly
+  turn-off. Enabling this makes Colors of Fall and Christmas Colors yield.'
+triggers:
+- trigger: sun
+  event: sunset
+  id: sunset
+- trigger: homeassistant
+  event: start
+  id: recovery
+- trigger: event
+  event_type: automation_reloaded
+  id: recovery
+conditions:
+- condition: sun
+  after: sunset
+- condition: time
+  after: '12:00:00'
+actions:
+- alias: Two paced passes to catch Hue mesh and Wi-Fi misses
+  repeat:
+    count: 2
+    sequence:
+    - alias: Stop if midnight passed during the run
+      condition: time
+      after: '12:00:00'
+    - action: scene.turn_on
+      target:
+        entity_id:
+        - scene.hue_calla_christmas
+        - scene.hue_lily_christmas
+        - scene.front_porch_recessed_lights_christmas
+      data:
+        transition: 5
+      continue_on_error: true
+    - alias: Recolor the lamp post only when its photocell has it on
+      if:
+      - condition: state
+        entity_id: light.front_yard_lamp_post_hue_edison
+        state: 'on'
+      then:
+      - action: light.turn_on
+        target:
+          entity_id: light.front_yard_lamp_post_hue_edison
+        data:
+          hs_color:
+          - 28
+          - 100
+          brightness_pct: 75
+          transition: 5
+        continue_on_error: true
+    - action: light.turn_on
+      target:
+        entity_id:
+        - light.front_porch_left_tree_lights
+        - light.front_porch_right_tree_lights
+        - light.front_yard_twinkly_doe
+        - light.front_yard_twinkly_stag
+        - light.front_yard_twinkly_light_tree
+        - light.front_yard_oak
+        - light.front_yard_cherry_blossom
+      continue_on_error: true
+    - delay:
+        seconds: 10
+mode: single
+trace:
+  stored_traces: 10
