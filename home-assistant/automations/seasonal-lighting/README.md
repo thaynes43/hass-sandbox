@@ -43,19 +43,19 @@ minute (this happened on 2026-11-22). It makes two passes, 10 s apart.
 | `light.front_yard_oak` | Front_Yard_Oak | New 2026, TWS250SPP2 |
 | `light.front_yard_cherry_blossom` | Front_Yard_Cherry_Blossom | New 2026, TWS250SPP2 |
 
-Tom asked for real Christmas colors on November 22, 2026, so the three
-`scene.*_christmas` scenes were recolored live. Last year's scenes used gold,
-orange, cream, teal and warm white, which read as fall. They now use the
-red / green / warm-gold palette from Christmas Colors (HS 0/100, 120/100, 45/45):
+Tom picked the Twinkly **Bliss** movie for the outdoor Twinkly lights on November 22, 2026. The three
+`scene.*_christmas` scenes were recolored live to match Bliss: pink/magenta, teal/aqua, lavender and soft
+white. Two earlier palettes that day were replaced. Last year's gold/orange/warm-white read as fall, and
+red/green/gold didn't match Bliss.
 
-| Scene | Lights (left → right) | Brightness |
+| Scene | Lights | Brightness |
 | --- | --- | --- |
-| `scene.hue_calla_christmas` | each side: red, green, gold, red | 217 (85%) |
-| `scene.hue_lily_christmas` | left: gold, red, green · right: green, red, gold | 230 (90%) |
-| `scene.front_porch_recessed_lights_christmas` | red, warm white (HS 40/15), red: brightest and lightest in the middle (Tom) | 166 / 255 / 166 |
+| `scene.hue_calla_christmas` (walkway) | each side 01→04: pink HS 320/75, teal 178/85, soft white 40/15, pink | 217 (85%) |
+| `scene.hue_lily_christmas` (house uplights) | left 01→03: pink, lavender HS 275/45, teal · right 01→03: teal, lavender, pink | 230 (90%) |
+| `scene.front_porch_recessed_lights_christmas` | pink, soft white, pink: brightest and lightest in the middle (Tom) | 166 / 255 / 166 |
 
 The lamp post is warm white (2700 K, 75%) for Get Jolly. Tom said the fall amber read as orange. Fall and
-Christmas Colors still use the amber.
+Christmas Colors still use the amber. If Tom changes the Twinkly movie, re-match these scenes.
 
 Changes from last year's Get Jolly:
 - It no longer turns the front-door lanterns on. They stay visitor-only, and the
