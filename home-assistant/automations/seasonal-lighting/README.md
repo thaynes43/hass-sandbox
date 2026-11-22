@@ -16,8 +16,45 @@ Seasonal palettes change its color, not its photocell schedule or power-on polic
 | --- | --- | --- |
 | `fall.yaml` | `automation.light_front_yard_sun_sets_colors_of_fall` | Enabled; November 1–26, 2026 |
 | `christmas.yaml` | `automation.light_front_yard_sun_sets_christmas_colors` | Enabled; eligible November 27, 2026 onward |
-| `visitor.yaml` | `automation.light_front_door_seasonal_visitor_turn_on_lanterns` | Enabled; visitor-only lanterns |
+| `visitor.yaml` | `automation.light_front_door_seasonal_visitor_turn_on_lanterns` | Enabled; visitor-only lanterns, also under Get Jolly |
 | `midnight.yaml` | `automation.light_front_yard_at_specific_time_turn_off_ambient_lighting` | Enabled; core lights and lanterns only; lamp post excluded |
+| `get-jolly.yaml` | `automation.light_front_yard_sun_sets_during_christmas_get_jolly` | **Enabled November 22, 2026, and live**; fall and Christmas Colors now yield |
+| `twinkly-midnight.yaml` | `automation.light_front_yard_at_specific_time_turn_off_twinkly` | Enabled November 22, 2026; midnight off for the 7 outdoor Twinkly lights |
+
+## Get Jolly, 2026 (current)
+
+Tom moved to Get Jolly on November 22, 2026
+([story #946](https://work.haynesnetwork.com/projects/haynes-engineering/work_packages/946)).
+At sunset, and on HA start or automation reload during the evening, it applies
+the existing `scene.hue_calla_christmas`, `scene.hue_lily_christmas` and
+`scene.front_porch_recessed_lights_christmas` scenes. It also starts the
+seven outdoor Twinkly lights in **movie** mode, which plays the scene chosen in the
+Twinkly app. Never start Twinkly with `light.turn_on`: that switches it to
+realtime color mode, which drops the app scene and turns off after about a
+minute (this happened on 2026-11-22). It makes two passes, 10 s apart.
+
+| Twinkly entity | Device name in the Twinkly app | Notes |
+| --- | --- | --- |
+| `light.front_porch_left_tree_lights` | Front_Porch_Shrubs | Renamed in the app; the entity_id is kept |
+| `light.front_porch_right_tree_lights` | Front_Yard_Corner_Tree | Renamed in the app; the entity_id is kept |
+| `light.front_yard_twinkly_doe` | Front_Yard_Twinkly_Doe | |
+| `light.front_yard_twinkly_stag` | Front_Yard_Twinkly_Stag | |
+| `light.front_yard_twinkly_light_tree` | Front_Yard_Twinkly_Light_Tree | Config entry title `Twinkly_F9B9F1` |
+| `light.front_yard_oak` | Front_Yard_Oak | New 2026, TWS250SPP2 |
+| `light.front_yard_cherry_blossom` | Front_Yard_Cherry_Blossom | New 2026, TWS250SPP2 |
+
+Changes from last year's Get Jolly:
+- It no longer turns the front-door lanterns on. They stay visitor-only, and the
+  visitor automation no longer yields to Get Jolly.
+- It never uses `scene.lamp_post_christmas`, which would force the lamp post on in
+  the old yellow-gold. The lamp post is recolored to amber HS 28/100 at 75% only
+  when it is already on.
+- The Twinkly midnight-off automation now covers all seven outdoor devices.
+
+The Twinkly config entries are disabled between seasons. They were re-enabled
+on November 22, 2026. The living room Balsam Hill tree and garland entries were
+re-enabled too. Their 06:00-on/01:00-off "Holiday Cheer" automations remain off,
+pending the indoor timing review in story #946.
 
 ## Palettes and schedule
 
@@ -58,9 +95,11 @@ added at that point was a regression: `previous` then restored the off state at
 the next dusk. That added shutoff and the later recovery/on-mode workarounds
 have been removed; the warmer amber remains.
 
-No new routine commands the Zooz yard outlets, Hue string lights,
-porch trees or Twinkly decorations. Tom excluded the Zooz outlets and Hue strings
-for Colors of Fall; their potential return belongs to his later Get Jolly review.
+The fall and Christmas Colors routines never command the Zooz yard outlets, Hue
+string lights, porch trees or Twinkly decorations. Tom excluded the Zooz outlets
+and Hue strings for Colors of Fall. Since November 22, 2026, Get Jolly commands
+the porch trees and the other outdoor Twinkly lights (see above). The Zooz
+outlets and Hue strings are still not commanded.
 
 The front-door lanterns stay off until a visitor is detected or the doorbell is
 pressed after dark. They turn off after three clear minutes; a doorbell press
@@ -82,15 +121,14 @@ These four Halloween automations were turned off, with their configs retained:
 `automation.light_front_yard_at_specific_time_turn_off_ambient_lighting` remains
 enabled: its midnight action covers all 17 core lights and front-door lanterns.
 The lamp post is excluded, as it was before the seasonal color changes.
-Ordinary ambient sunset lighting and Get Jolly remain disabled. The separate
-Twinkly midnight-off automation also remains disabled.
+Ordinary ambient sunset lighting remains disabled. Get Jolly and its Twinkly
+midnight-off were enabled on November 22, 2026 (see above).
 
 Enabling either `automation.light_front_yard_sun_sets_during_christmas_get_jolly`
-or `automation.light_front_yard_at_sunset_turn_on` makes the new controllers yield.
-Color actions recheck the takeover flags before each light command; visitor
-lighting rechecks before its delayed off so it does not undo the takeover.
-The later expanded Christmas setup must review Get Jolly and its corresponding
-decoration shutoff together before activation.
+or `automation.light_front_yard_at_sunset_turn_on` makes the fall and Christmas
+Colors controllers yield. Their color actions recheck the takeover flags before
+each light command. Visitor lighting yields only to ordinary ambient sunset
+lighting, and rechecks it before its delayed off.
 
 ## Verification and rollback
 
@@ -104,7 +142,7 @@ The original 24 focused checks passed, including fake-time visitor race, repeat 
 long presence, takeover and midnight cancellation scenarios. Independent native
 review found two visitor timing issues; both were fixed and rereview passed
 without remaining substantive findings.
-The current 32 focused checks cover every fall week's lamp-post amber color,
+The 32 focused checks at the time cover every fall week's lamp-post amber color,
 the Christmas slot, exclusion from midnight shutoff and absence of lamp-post
 availability triggers, and recoloring without switching an off lamp on.
 Direct Zigbee readback confirmed `startUpOnOff: 255`
@@ -129,3 +167,16 @@ Not verified by the daytime test: an actual sunset event or physical camera/
 doorbell visitor. No sensor states were forged. The future November 27 calendar
 date was evaluated without changing HA's clock. No cluster or AppDaemon change
 was made.
+
+Since story #946 (November 22, 2026), the suite has 36 checks. They also cover
+these Get Jolly rules: Twinkly starts in movie mode, its on and off lists match,
+the lanterns are left alone, the lamp post is recolored only when it is on, and
+the visitor lanterns keep working.
+Visitor lighting runs while any seasonal controller is enabled: Colors of Fall,
+Christmas Colors or Get Jolly.
+The `scene.*_christmas` scenes are not mirrored in the repo. Their live contents
+are limited to the 8 Callas, 6 Lilys and 3 porch recessed lights. That was checked
+on November 22, 2026. Recheck it if the scenes change.
+To roll back Get Jolly, disable `automation.light_front_yard_sun_sets_during_christmas_get_jolly`
+and `automation.light_front_yard_at_specific_time_turn_off_twinkly`. Fall and
+Christmas Colors then resume on their own date gates.

@@ -1,0 +1,23 @@
+id: '1763948489990'
+alias: '[Light] : [Front Yard] : [At Specific Time] : [Turn Off Twinkly]'
+description: 'Midnight off for the 7 outdoor Twinkly lights used by Get Jolly (2026: added Oak and Cherry Blossom). Hue lights
+  are turned off by the ambient-lighting midnight automation; lamp post excluded.'
+triggers:
+- at: 00:00:00
+  trigger: time
+conditions: []
+actions:
+- action: light.turn_off
+  metadata: {}
+  data: {}
+  target:
+    entity_id:
+    - light.front_porch_left_tree_lights
+    - light.front_porch_right_tree_lights
+    - light.front_yard_twinkly_doe
+    - light.front_yard_twinkly_stag
+    - light.front_yard_twinkly_light_tree
+    - light.front_yard_oak
+    - light.front_yard_cherry_blossom
+  continue_on_error: true
+mode: single
