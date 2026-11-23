@@ -71,7 +71,9 @@ re-enabled too. Their "Holiday Cheer" automations were turned on November 22, 20
 `automation.light_livingroom_sun_sets_spread_holiday_cheer` starts both in movie mode at 06:00
 daily. It now uses `select.select_option` for the same reason as Get Jolly; its disabled 15:00
 weekday trigger is unchanged. `automation.light_livingroom_specific_time_suspend_holiday_cheer`
-turns them off at 01:00. These indoor automations are live-only; their configs are not mirrored
+turns them off at 01:00. The basement wreath (`Basement_Wreath`, 192.168.50.152, entry
+`01M8367HV4TR5XS24BPH8WZNS2`; `light.basement_wreath`, `select.basement_wreath_mode`) was
+added November 23, 2026 and follows the same 06:00/01:00 schedule. These indoor automations are live-only; their configs are not mirrored
 here. Decorations on the dining room Zooz power strip are a separate story,
 [#947](https://work.haynesnetwork.com/projects/haynes-engineering/work_packages/947).
 
