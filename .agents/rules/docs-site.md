@@ -55,6 +55,7 @@ Update this map when adding or removing pages.
 | System Health Monitoring | `docs/features/health-checks.md` | health_checks |
 | Media Dashboard | `docs/features/media-dashboard.md` | media_dashboard_app |
 | Kitchen Timers | `docs/features/kitchen-timer.md` | `timer.kitchen_timer_1..3`, `script.kitchen_timer_relay`, `script.kitchen_timer_voice`, kitchen custom sentences + intent_script, ring automation, kitchen-timer-card |
+| Laundry Notifications | `docs/features/laundry-notifications.md` | laundry_notify |
 | Architecture Overview | `docs/architecture/overview.md` | System diagram, data flows, self-provisioning, relay pattern |
 | AppDaemon Apps | `docs/apps/index.md` | App listing, provider listing, dependency graph |
 | Getting Started | `docs/setup/getting-started.md` | Clone, venv, secrets, run, test, serve docs |

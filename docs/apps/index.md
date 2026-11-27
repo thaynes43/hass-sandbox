@@ -5,6 +5,7 @@
 | App | Description |
 |-----|-------------|
 | **door_notify** | Door open/close push notifications with optional AI image attachment |
+| **laundry_notify** | Washer and dryer "done" pushes, combined into one when both are running, plus a reminder when wet clothes sit in the washer |
 | **detection_summary_app** | Motion-triggered detection pipeline: capture, AI scoring, publish |
 | **detection_summary_viewer** | Dashboard viewer for detection summary bundles |
 | **photo_frame_viewer** | Photo slideshow on Lovelace dashboards (wall displays) |

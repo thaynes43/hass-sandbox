@@ -62,6 +62,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `immich_fetcher` | `appdaemon/apps/immich_fetcher/README.md` | Periodic photo fetching from Immich |
 | `photo_frame_viewer` | `appdaemon/apps/photo_frame_viewer/README.md` | Photo slideshow on Lovelace dashboards |
 | `door_notify` | `appdaemon/apps/door_notify/README.md` | Door open/close push notifications with optional AI attachment |
+| `laundry_notify` | `appdaemon/apps/laundry_notify/README.md` | Washer/dryer completion pushes (combined when both run) and wet-clothes reminder |
 | `calendar_from_schedule_app` | `appdaemon/apps/calendar_from_schedule_app/README.md` | Sync YAML maintenance schedules to HA local calendar |
 | `dashboard_notify` | `appdaemon/apps/dashboard_notify/README.md` | AI-generated notification carousel for wall displays |
 | `school_lunch_app` | `appdaemon/apps/school_lunch_app/README.md` | Fetch daily school lunch menus and publish to HA sensor |
@@ -152,6 +153,8 @@ detection_summary_app
        └─ dashboard_notify (listens for events, copies generated images)
 
 calendar_from_schedule_app (standalone — reads YAML, writes to HA calendar)
+
+laundry_notify (standalone — reads LG ThinQ washer/dryer status sensors, sends mobile_app pushes)
 
 school_lunch_app (no app dependencies — fetches school menus, publishes sensor.school_lunch_menu)
   ├─ providers/school_menu: client (School Nutrition and Fitness API)
