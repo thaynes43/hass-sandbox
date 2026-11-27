@@ -12,6 +12,9 @@
 # crash-looped 1.29.0). After a bump, check entrypoint.sh's exec path.
 FROM acockburn/appdaemon:4.5.16@sha256:e221331ca98c19558b9e7838e2187e63d5c900eebfd0804a6cba4b1596782420
 
+# uv (used by the 4.5.16 start script) must not write under the read-only root.
+ENV UV_CACHE_DIR=/tmp/uv-cache
+
 # --- Build-time: install app dependencies ---
 # Only runtime deps; dev deps (pytest, ruamel.yaml, etc.) are not needed.
 COPY docker/requirements-prod.txt /tmp/requirements-prod.txt
