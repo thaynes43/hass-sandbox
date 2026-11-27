@@ -7,7 +7,10 @@
 #   /conf/secrets.yaml   — Secret subPath mount
 #   /media         — NFS mount for media files
 
-FROM acockburn/appdaemon:latest
+# Pinned by tag + digest so a base bump is a deliberate change (an unpinned
+# :latest moved to 4.5.16 on 2026-11-13 and renamed the start script, which
+# crash-looped 1.29.0). After a bump, check entrypoint.sh's exec path.
+FROM acockburn/appdaemon:4.5.16@sha256:e221331ca98c19558b9e7838e2187e63d5c900eebfd0804a6cba4b1596782420
 
 # --- Build-time: install app dependencies ---
 # Only runtime deps; dev deps (pytest, ruamel.yaml, etc.) are not needed.
