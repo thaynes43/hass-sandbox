@@ -413,3 +413,14 @@ class TestRestart:
         app._clock = NOW + dt.timedelta(hours=2)
         app.fire_only_timer()
         assert "2 h" in app.calls[-1][1]["message"]
+
+    def test_restart_after_washer_push_with_dryer_on_other_load_is_not_a_hold(self):
+        app = make_app(washer="running")
+        app.change(W, WE, "spinning", "end")  # Washer complete + reminder armed
+        later = NOW + dt.timedelta(minutes=30)
+        app2 = make_app(washer="end", dryer="running", last_changed=later.isoformat(), now=later)
+        assert not app2._coord.holding_washer
+        (_, (_, secs)), = app2.timers.items()
+        assert secs == 90 * 60  # original reminder kept
+        app2.change(D, DE, "cooling", "end")
+        assert titles(app2) == ["Dryer complete"] * 2

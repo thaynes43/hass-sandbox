@@ -98,6 +98,7 @@ class LaundryNotify(hass.Hass):
         self._saved = saved
         if saved.get("washer_end"):
             self._washer_end_time = self._parse_time(saved.get("washer_end"))
+        self._drop_hold_if_already_notified()
 
         washer_now = self._coord.last_state.get(WASHER)
         if washer_now is not None and washer_now != "end":
@@ -147,6 +148,17 @@ class LaundryNotify(hass.Hass):
         data = dict(getattr(self, "_saved", {}) or {})
         data.update(changes)
         self._save(data)
+
+    def _drop_hold_if_already_notified(self) -> None:
+        """A rebuilt washer hold is wrong if this load's push already went out.
+
+        Only a notified load writes reminder_due / reminder_sent; a real hold
+        never does. Washer in "end" + dryer running a different load after the
+        push looks like a hold to seed(), so the saved episode decides.
+        """
+        saved = getattr(self, "_saved", {}) or {}
+        if self._coord.holding_washer and ("reminder_due" in saved or "reminder_sent" in saved):
+            self._coord.holding_washer = False
 
     def _restore_reminder(self, saved: dict) -> None:
         """Washer is sitting in "end" at startup and has been notified.
@@ -212,6 +224,7 @@ class LaundryNotify(hass.Hass):
         elif machine == WASHER and prev is None and now_state == "end":
             # Washer was unavailable at startup and has come back sitting full.
             self._coord.holding_washer = is_active(self._coord.last_state.get(DRYER))
+            self._drop_hold_if_already_notified()
             if self._coord.restore_reminder():
                 self._restore_reminder(self._saved)
         elif machine == WASHER and prev is None and now_state is not None:
