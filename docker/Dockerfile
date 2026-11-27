@@ -7,7 +7,9 @@
 #   /conf/secrets.yaml   — Secret subPath mount
 #   /media         — NFS mount for media files
 
-FROM acockburn/appdaemon:latest
+# Pinned: 4.5.16 (the :latest of 2026-11-13) moved /usr/src/app/dockerStart.sh and
+# 1.29.0 crash-looped. Bump deliberately and check entrypoint.sh's exec path.
+FROM acockburn/appdaemon:4.5.13@sha256:cabcb3a4e739db2572ecb8dc3cee685300ab27274efda83a6d8ce4d3988dc647
 
 # --- Build-time: install app dependencies ---
 # Only runtime deps; dev deps (pytest, ruamel.yaml, etc.) are not needed.
