@@ -52,6 +52,7 @@ nav:
       - System Health Monitoring: features/health-checks.md
       - Media Dashboard: features/media-dashboard.md
       - Kitchen Timers: features/kitchen-timer.md
+      - Laundry Notifications: features/laundry-notifications.md
   - Architecture:
       - Overview: architecture/overview.md
       - AppDaemon Apps: apps/index.md

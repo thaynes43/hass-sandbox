@@ -1727,3 +1727,18 @@ assist_exposure_guard:
     - "script.kellie_mobile_primary_bedroom_sleep"
   # Per-entity escape hatch that beats every deny rule above.
   allow_entities: []
+
+# Washer/dryer completion pushes + wet-clothes reminder (OP988; Tom, 2026-11-27).
+laundry_notify:
+  module: laundry_notify.laundry_notify
+  class: LaundryNotify
+  disable: true
+  washer_status_entity: sensor.washer_current_status
+  dryer_status_entity: sensor.dryer_current_status
+  notify_services:
+    - notify.mobile_app_toms_iphone_15_pro
+    - notify.mobile_app_toms_iphone_air
+    - notify.mobile_app_kellies_iphone_air
+  # Dryer finishes while the washer still runs: notify_now (Tom's pick) or wait_for_washer.
+  dryer_first_policy: notify_now
+  washer_reminder_minutes: 120
