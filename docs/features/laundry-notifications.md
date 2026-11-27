@@ -28,7 +28,8 @@ LG ThinQ dryer status  ─┘     ├─ decides: notify now, hold, or combine
 ```
 
 - The decision logic is a small state machine with no Home Assistant code in it, so every combination above is covered by unit tests. We also replayed a real laundry day from history through it.
-- Wi-Fi drop-outs (the machines going `unavailable` mid-cycle) are ignored, so a blip never hides or fakes a finish.
+- Wi-Fi drop-outs (the machines going `unavailable` mid-cycle) are ignored, so a blip doesn't fake a finish or cut one short.
+- Restarts don't double up: the reminder's state is saved, so a Home Assistant restart doesn't send it again, and a combined push that was waiting is still sent.
 - The reminder delay and the dryer-first behavior are config settings.
 
 ## Related

@@ -19,7 +19,17 @@ The app watches the LG ThinQ status sensors (`sensor.washer_current_status`, `se
 
 Every notification that tells someone the washer is done arms a one-shot timer (`washer_reminder_minutes`, default 120). If the washer is still in `end` when it fires, the app sends **Washer still needs switching** with how long the clothes have sat. The washer has no door sensor, so "opened" is the washer leaving `end`. In practice it powers off when the door is opened, and starting a new cycle counts too. Either cancels the reminder.
 
-On AppDaemon restart the app reads the current states without sending anything. If the washer is sitting in `end`, the reminder is re-armed for the time left, counted from when the washer finished. If that time has already passed, the app skips it instead of sending a stale one.
+### Restarts
+
+AppDaemon re-initialises the app on its own restart and every time Home Assistant restarts. On start the app reads the current states and sends nothing. It also rebuilds a hold that was in progress: a washer in `end` while the dryer runs is still waiting for the combined push.
+
+The reminder episode (when the washer finished, when the reminder is due, whether it was sent) is saved in `laundry_notify_state.json` in the AppDaemon config dir (`state_file` overrides). A Home Assistant restart resets `last_changed`, so without that file a reminder could be sent twice and report the wrong wait. With the file:
+
+- a reminder that was already sent is not sent again;
+- a pending one keeps its original due time;
+- one that fell due during the downtime is sent on start.
+
+The file lives in the pod's emptyDir, so a pod restart loses it. The app then falls back to `last_changed` and skips a reminder whose time has passed. If AppDaemon starts while a machine is `unavailable` and it comes back as `end`, that finish is not reported, because the app never saw it running. A washer that comes back sitting in `end` still gets its saved reminder.
 
 ## Structure
 
@@ -52,6 +62,7 @@ laundry_notify:
 | `dryer_first_policy` | `notify_now` | `notify_now` or `wait_for_washer` |
 | `washer_reminder_minutes` | `120` | Minutes after the washer push before the reminder |
 | `notification_url` | `""` | Optional Companion App deep link |
+| `state_file` | `<config_dir>/laundry_notify_state.json` | Reminder episode saved across restarts |
 
 Pushes use tag `laundry_washer` (washer, combined and reminder: each replaces the last) or `laundry_dryer`, grouped under `laundry`.
 

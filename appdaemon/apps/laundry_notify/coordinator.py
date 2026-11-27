@@ -100,6 +100,17 @@ class LaundryCoordinator:
         """Record current states at startup without emitting notifications."""
         self.last_state[WASHER] = normalize(washer_state)
         self.last_state[DRYER] = normalize(dryer_state)
+        # Rebuild a hold that was in progress when the app restarted, so the
+        # combined push is not lost: a finished machine sitting in "end" while
+        # the other still runs is exactly what a hold looks like.
+        washer_done = self.last_state[WASHER] == END_STATE
+        dryer_done = self.last_state[DRYER] == END_STATE
+        self.holding_washer = washer_done and is_active(self.last_state[DRYER])
+        self.holding_dryer = (
+            dryer_done
+            and is_active(self.last_state[WASHER])
+            and self.dryer_first_policy == POLICY_WAIT_FOR_WASHER
+        )
 
     # ------------------------------------------------------------------ updates
     def update(self, machine: str, new_state: Optional[str]) -> list[Action]:
@@ -191,8 +202,9 @@ class LaundryCoordinator:
         return [Action("notify", WASHER_REMINDER)]
 
     def restore_reminder(self) -> bool:
-        """At startup: re-arm the reminder if the washer is sitting in ``end``."""
-        if self.last_state.get(WASHER) == END_STATE:
+        """At startup: re-arm the reminder if the washer is sitting in ``end``
+        and has been notified (not still held for the dryer)."""
+        if self.last_state.get(WASHER) == END_STATE and not self.holding_washer:
             self.reminder_armed = True
             return True
         return False

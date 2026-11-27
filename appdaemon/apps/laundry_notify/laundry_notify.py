@@ -9,6 +9,8 @@ asks for, and runs the wet-clothes reminder timer. See README.md for the rules.
 from __future__ import annotations
 
 import datetime as dt
+import json
+from pathlib import Path
 from typing import Any, Optional
 
 import hassapi as hass
@@ -22,6 +24,7 @@ from laundry_notify.coordinator import (
     WASHER_COMPLETE,
     WASHER_REMINDER,
     LaundryCoordinator,
+    is_active,
 )
 
 
@@ -73,6 +76,9 @@ class LaundryNotify(hass.Hass):
         "dryer_first_policy": POLICY_NOTIFY_NOW,
         "washer_reminder_minutes": 120,
         "notification_url": "",
+        # Survives AppDaemon re-initialising the app (every HA restart): stops a
+        # sent reminder being sent again. Default: <AppDaemon config dir>/...
+        "state_file": "",
     }
 
     def initialize(self) -> None:
@@ -87,19 +93,19 @@ class LaundryNotify(hass.Hass):
         dryer_state = self.get_state(self._dryer_entity)
         self._coord.seed(washer_state, dryer_state)
 
-        # Restart recovery: a washer already sitting in "end" keeps its reminder,
-        # counted from when it finished. If that time has passed, skip it rather
-        # than push a stale reminder on every restart.
-        if self._coord.restore_reminder():
-            ended = self._parse_time(self.get_state(self._washer_entity, attribute="last_changed"))
-            self._washer_end_time = ended
-            remaining = self._reminder_minutes * 60
-            if ended is not None:
-                remaining -= (self._now() - ended).total_seconds()
-            if remaining > 0:
-                self._schedule_reminder(remaining)
-            else:
-                self._coord.reminder_armed = False
+        self._state_path = self._resolve_state_path()
+        saved = self._load_saved()
+        self._saved = saved
+        if saved.get("washer_end"):
+            self._washer_end_time = self._parse_time(saved.get("washer_end"))
+
+        washer_now = self._coord.last_state.get(WASHER)
+        if washer_now is not None and washer_now != "end":
+            # Washer known to be empty/running: drop any old episode. While it is
+            # unavailable (HA still starting) keep the file for the next init.
+            self._save({})
+        elif self._coord.restore_reminder():
+            self._restore_reminder(saved)
 
         self.listen_state(self._on_status, self._washer_entity, machine=WASHER)
         self.listen_state(self._on_status, self._dryer_entity, machine=DRYER)
@@ -109,6 +115,68 @@ class LaundryNotify(hass.Hass):
             f"policy={self._coord.dryer_first_policy} reminder={self._reminder_minutes:g} min",
             level="INFO",
         )
+
+    # ---------------------------------------------------------------- restart state
+    def _resolve_state_path(self) -> Optional[Path]:
+        configured = str(self._arg("state_file") or "").strip()
+        if configured:
+            return Path(configured)
+        base = getattr(self, "config_dir", None)
+        return Path(base) / "laundry_notify_state.json" if base else None
+
+    def _load_saved(self) -> dict:
+        if self._state_path is None or not self._state_path.exists():
+            return {}
+        try:
+            data = json.loads(self._state_path.read_text())
+            return data if isinstance(data, dict) else {}
+        except Exception as exc:
+            self.log(f"Ignoring unreadable state file {self._state_path}: {exc}", level="WARNING")
+            return {}
+
+    def _save(self, data: dict) -> None:
+        self._saved = data
+        if self._state_path is None:
+            return
+        try:
+            self._state_path.write_text(json.dumps(data))
+        except Exception as exc:
+            self.log(f"Could not write state file {self._state_path}: {exc}", level="WARNING")
+
+    def _update_saved(self, **changes) -> None:
+        data = dict(getattr(self, "_saved", {}) or {})
+        data.update(changes)
+        self._save(data)
+
+    def _restore_reminder(self, saved: dict) -> None:
+        """Washer is sitting in "end" at startup and has been notified.
+
+        Prefer the saved episode: a Home Assistant restart resets last_changed,
+        so it can't tell how long the clothes have sat or whether the reminder
+        already went out. Without a saved episode (first run, pod restart) fall
+        back to last_changed and skip a reminder whose time has passed.
+        """
+        self._saved = saved
+        if saved.get("washer_end"):
+            self._washer_end_time = self._parse_time(saved.get("washer_end"))
+            if saved.get("reminder_sent"):
+                self._coord.reminder_armed = False
+                self.log("Washer reminder already sent for this load; not re-arming")
+                return
+            due = self._parse_time(saved.get("reminder_due"))
+            if due is not None:
+                # Due while we were down and never sent: send it now.
+                self._schedule_reminder(max(1.0, (due - self._now()).total_seconds()), persist=False)
+                return
+        ended = self._parse_time(self.get_state(self._washer_entity, attribute="last_changed"))
+        self._washer_end_time = ended
+        remaining = self._reminder_minutes * 60
+        if ended is not None:
+            remaining -= (self._now() - ended).total_seconds()
+        if remaining > 0:
+            self._schedule_reminder(remaining)
+        else:
+            self._coord.reminder_armed = False
 
     # ---------------------------------------------------------------- helpers
     def _arg(self, key: str) -> Any:
@@ -132,9 +200,22 @@ class LaundryNotify(hass.Hass):
     # ---------------------------------------------------------------- callbacks
     def _on_status(self, entity, attribute, old, new, kwargs) -> None:
         machine = kwargs.get("machine")
-        if machine == WASHER and str(new).strip().lower() == "end":
-            self._washer_end_time = self._now()
+        prev = self._coord.last_state.get(WASHER)
         actions = self._coord.update(machine, new)
+        now_state = self._coord.last_state.get(WASHER)
+        if machine == WASHER and now_state == "end" and is_active(prev):
+            # A real finish (not an unavailable -> end blip): start a new episode.
+            self._washer_end_time = self._now()
+            self._save({"washer_end": self._washer_end_time.isoformat()})
+        elif machine == WASHER and prev == "end" and now_state != "end":
+            self._save({})
+        elif machine == WASHER and prev is None and now_state == "end":
+            # Washer was unavailable at startup and has come back sitting full.
+            self._coord.holding_washer = is_active(self._coord.last_state.get(DRYER))
+            if self._coord.restore_reminder():
+                self._restore_reminder(self._saved)
+        elif machine == WASHER and prev is None and now_state is not None:
+            self._save({})
         self.log(
             f"{machine} {old!r} -> {new!r}: "
             f"{[a.notification or a.kind for a in actions] or 'no action'} "
@@ -146,6 +227,8 @@ class LaundryNotify(hass.Hass):
     def _on_reminder(self, kwargs) -> None:
         self._reminder_handle = None
         actions = self._coord.reminder_due()
+        if actions:
+            self._update_saved(reminder_sent=True, reminder_due=None)
         self.log(f"Washer reminder timer fired: {[a.notification for a in actions] or 'washer already switched'}")
         self._apply(actions)
 
@@ -157,10 +240,14 @@ class LaundryNotify(hass.Hass):
                 self._schedule_reminder(self._reminder_minutes * 60)
             elif action.kind == "cancel_reminder":
                 self._cancel_reminder()
+                self.log("Washer reminder cancelled (washer was switched)")
 
-    def _schedule_reminder(self, seconds: float) -> None:
+    def _schedule_reminder(self, seconds: float, *, persist: bool = True) -> None:
         self._cancel_reminder()
         self._reminder_handle = self.run_in(self._on_reminder, max(1, int(seconds)))
+        if persist:
+            due = self._now() + dt.timedelta(seconds=seconds)
+            self._update_saved(reminder_due=due.isoformat(), reminder_sent=False)
         self.log(f"Washer reminder armed for {format_duration(seconds / 60)}")
 
     def _cancel_reminder(self) -> None:
@@ -170,7 +257,6 @@ class LaundryNotify(hass.Hass):
             except Exception as exc:  # timer may already have fired
                 self.log(f"Washer reminder cancel ignored: {exc}", level="DEBUG")
             self._reminder_handle = None
-            self.log("Washer reminder cancelled (washer was switched)")
 
     def _send(self, kind: str) -> None:
         waited = None

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -172,6 +173,22 @@ class TestReminder:
         assert run(co, (W, "end")) == []
         assert not co.reminder_armed
 
+    def test_seed_rebuilds_washer_hold_after_restart(self):
+        co = LaundryCoordinator()
+        co.seed("end", "running")
+        assert co.holding_washer
+        assert not co.restore_reminder()
+        assert run(co, (D, "end")) == [Action("notify", c.BOTH_COMPLETE), Action("arm_reminder")]
+
+    def test_seed_rebuilds_dryer_hold_only_under_wait_policy(self):
+        co = LaundryCoordinator(dryer_first_policy=c.POLICY_WAIT_FOR_WASHER)
+        co.seed("running", "end")
+        assert co.holding_dryer
+        assert notes(run(co, (W, "end"))) == [c.BOTH_COMPLETE]
+        co2 = LaundryCoordinator()
+        co2.seed("running", "end")
+        assert not co2.holding_dryer
+
     def test_restore_reminder_only_in_end(self):
         co = LaundryCoordinator()
         co.seed("end", "power_off")
@@ -247,9 +264,20 @@ NOW = dt.datetime(2026, 11, 27, 20, 0, tzinfo=dt.timezone.utc)
 WE, DE = "sensor.washer_current_status", "sensor.dryer_current_status"
 
 
-def make_app(washer="power_off", dryer="power_off", last_changed=None, **args):
+@pytest.fixture(autouse=True)
+def _state_file(tmp_path, monkeypatch):
+    path = tmp_path / "laundry_state.json"
+    monkeypatch.setattr(sys.modules[__name__], "STATE_FILE", path, raising=False)
+    yield path
+
+
+STATE_FILE = None
+
+
+def make_app(washer="power_off", dryer="power_off", last_changed=None, now=NOW, **args):
     states = {WE: {"state": washer, "last_changed": last_changed}, DE: {"state": dryer}}
-    app = FakeApp({"notify_services": ["notify.mobile_app_a", "notify.mobile_app_b"], **args}, states, NOW)
+    args.setdefault("state_file", str(STATE_FILE))
+    app = FakeApp({"notify_services": ["notify.mobile_app_a", "notify.mobile_app_b"], **args}, states, now)
     app.initialize()
     return app
 
@@ -316,3 +344,72 @@ class TestApp:
         app.call_service = flaky
         app.change(W, WE, "spinning", "end")
         assert sent == ["notify/mobile_app_b"]
+
+
+class TestRestart:
+    def test_restart_during_hold_still_sends_combined(self):
+        app = make_app(washer="end", dryer="running", last_changed=NOW.isoformat())
+        assert app.timers == {}
+        app.change(D, DE, "cooling", "end")
+        assert titles(app) == ["Washer & dryer complete"] * 2
+        assert app.timers
+
+    def test_reminder_not_resent_after_ha_restart(self):
+        app = make_app(washer="running")
+        app.change(W, WE, "spinning", "end")
+        app._clock = NOW + dt.timedelta(hours=2)
+        app.fire_only_timer()
+        assert titles(app)[-1] == "Washer still needs switching"
+        # HA restart: last_changed reset to boot time, AppDaemon re-initialises.
+        later = NOW + dt.timedelta(hours=3)
+        app2 = make_app(washer="end", last_changed=later.isoformat(), now=later)
+        assert app2.timers == {}
+        assert app2.calls == []
+
+    def test_pending_reminder_keeps_original_due_time(self):
+        app = make_app(washer="running")
+        app.change(W, WE, "spinning", "end")
+        later = NOW + dt.timedelta(minutes=30)
+        app2 = make_app(washer="end", last_changed=later.isoformat(), now=later)
+        (_, (_, secs)), = app2.timers.items()
+        assert secs == 90 * 60
+        app2._clock = NOW + dt.timedelta(hours=2)
+        app2.fire_only_timer()
+        assert "2 h" in app2.calls[-1][1]["message"]
+
+    def test_reminder_due_during_downtime_sends_on_start(self):
+        app = make_app(washer="running")
+        app.change(W, WE, "spinning", "end")
+        later = NOW + dt.timedelta(hours=4)
+        app2 = make_app(washer="end", last_changed=later.isoformat(), now=later)
+        (_, (_, secs)), = app2.timers.items()
+        assert secs == 1
+        app2.fire_only_timer()
+        assert "4 h" in app2.calls[-1][1]["message"]
+
+    def test_washer_unavailable_at_start_restores_when_back(self):
+        app = make_app(washer="running")
+        app.change(W, WE, "spinning", "end")
+        later = NOW + dt.timedelta(minutes=30)
+        app2 = make_app(washer="unavailable", now=later)
+        assert app2.timers == {}
+        app2.change(W, WE, "unavailable", "end")
+        assert app2.calls == []
+        (_, (_, secs)), = app2.timers.items()
+        assert secs == 90 * 60
+
+    def test_opened_washer_clears_episode(self):
+        app = make_app(washer="running")
+        app.change(W, WE, "spinning", "end")
+        app.change(W, WE, "end", "power_off")
+        assert json.loads(STATE_FILE.read_text()) == {}
+
+    def test_unavailable_blip_does_not_reset_finish_time(self):
+        app = make_app(washer="running")
+        app.change(W, WE, "spinning", "end")
+        app._clock = NOW + dt.timedelta(minutes=60)
+        app.change(W, WE, "end", "unavailable")
+        app.change(W, WE, "unavailable", "end")
+        app._clock = NOW + dt.timedelta(hours=2)
+        app.fire_only_timer()
+        assert "2 h" in app.calls[-1][1]["message"]
