@@ -16,6 +16,10 @@ cp -r "$STAGED/providers" "$CONF/apps/providers"
 
 echo "[entrypoint] App code deployed from image to $CONF/apps/"
 
+# 4.5.16's start.sh launches through `uv run`, which needs a writable cache.
+# The pod runs with readOnlyRootFilesystem; /tmp is an emptyDir.
+export UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}"
+
 # Delegate to the upstream AppDaemon entrypoint: /start.sh from 4.5.16
 # (upstream moved it), /usr/src/app/dockerStart.sh before that.
 for upstream in /start.sh /usr/src/app/dockerStart.sh; do
